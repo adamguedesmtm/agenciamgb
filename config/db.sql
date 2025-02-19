@@ -60,3 +60,17 @@ CREATE TABLE IF NOT EXISTS roles (
     emoji TEXT,
     UNIQUE(user_id, role)
 );
+
+-- Tabela para histórico de jogos
+CREATE TABLE IF NOT EXISTS game_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    demo_id INTEGER,
+    player_id INTEGER,
+    kills INTEGER DEFAULT 0,
+    mortes INTEGER DEFAULT 0,
+    headshots INTEGER DEFAULT 0,
+    assists INTEGER DEFAULT 0,
+    kd_ratio REAL GENERATED ALWAYS AS (kills / NULLIF(mortes, 0)) STORED,
+    FOREIGN KEY (demo_id) REFERENCES demos (id),
+    FOREIGN KEY (player_id) REFERENCES players (id)
+);
