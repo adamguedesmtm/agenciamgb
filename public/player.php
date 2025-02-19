@@ -42,6 +42,7 @@ $heatmaps = $heatmapsStmt->fetchAll(PDO::FETCH_ASSOC);
 <body>
     <div class="container">
         <h1>Perfil do Jogador: <?= htmlspecialchars($jogador['nome']) ?></h1>
+        <p><strong>Elo:</strong> <?= $jogador['elo'] ?></p>
         <p><strong>Kills:</strong> <?= $jogador['kills'] ?></p>
         <p><strong>Mortes:</strong> <?= $jogador['mortes'] ?></p>
         <p><strong>K/D Ratio:</strong> <?= number_format($jogador['kd_ratio'], 2) ?></p>
