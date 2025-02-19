@@ -4,6 +4,33 @@
 
 include '../config/db.php';
 
+// Função para descriptografar uma string
+function decrypt_string($encrypted_string, $encryption_key) {
+    return shell_exec("echo -n \"$encrypted_string\" | openssl enc -aes-256-cbc -a -d -salt -pass pass:\"$encryption_key\"");
+}
+
+// Carregar as credenciais do .env
+$dotenv = [];
+if (file_exists('../.env')) {
+    $dotenv_lines = file('../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($dotenv_lines as $line) {
+        list($key, $value) = explode('=', $line, 2);
+        $dotenv[$key] = trim($value);
+    }
+}
+
+// Descriptografar as credenciais
+$encryption_key = $dotenv['ENCRYPTION_KEY'];
+$db_host = decrypt_string($dotenv['DB_HOST'], $encryption_key);
+$db_name = decrypt_string($dotenv['DB_NAME'], $encryption_key);
+$db_user = decrypt_string($dotenv['DB_USER'], $encryption_key);
+$db_pass = decrypt_string($dotenv['DB_PASS'], $encryption_key);
+$discord_bot_token = decrypt_string($dotenv['DISCORD_BOT_TOKEN'], $encryption_key);
+$steam_api_key = decrypt_string($dotenv['STEAM_API_KEY'], $encryption_key);
+
+// Conexão com o banco de dados SQLite
+$dbPath = '/var/www/agenciamgb/storage/logs/stats.db';
+
 $nome = $_GET['nome'];
 $query = "SELECT * FROM players WHERE nome = :nome";
 $stmt = $conn->prepare($query);
