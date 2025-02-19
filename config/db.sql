@@ -116,7 +116,6 @@ CREATE TABLE IF NOT EXISTS game_history (
     FOREIGN KEY (demo_id) REFERENCES demos (id),
     FOREIGN KEY (player_id) REFERENCES players (id)
 );
-");
 
 -- Tabela para heatmaps
 CREATE TABLE IF NOT EXISTS heatmaps (
