@@ -1,12 +1,22 @@
 from flask import Flask, request, jsonify
+import sqlite3
+import os
 
 app = Flask(__name__)
+DB_PATH = '/var/www/stats/stats.db'
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 @app.route('/gsi', methods=['POST'])
 def gsi():
     data = request.json
-    # Process GSI data here
-    return jsonify({"status": "success"})
+    conn = get_db_connection()
+    # Processa os dados recebidos e salva no banco de dados
+    conn.close()
+    return jsonify({"status": "sucesso"})
 
 if __name__ == '__main__':
-    app.run(port=3000)
+    app.run(host='0.0.0.0', port=5000)

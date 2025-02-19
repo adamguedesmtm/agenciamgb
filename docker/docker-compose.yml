@@ -6,47 +6,35 @@ services:
     ports:
       - "80:80"
     volumes:
-      - .:/var/www/html
+      - ./logs:/var/www/stats/logs
+      - ./demos:/var/www/stats/demos
+      - ./player_cards:/var/www/stats/player_cards
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpassword
-      - MYSQL_DATABASE=dbname
-      - MYSQL_USER=dbuser
-      - MYSQL_PASSWORD=dbpass
-
-  db:
-    image: mysql:5.7
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: dbname
-      MYSQL_USER: dbuser
-      MYSQL_PASSWORD: dbpass
-    volumes:
-      - db_data:/var/lib/mysql
+      - DB_PATH=/var/www/stats/stats.db
 
   bot:
     image: python:3.10-slim
-    command: python /app/scripts/bot.py
+    command: python /app/bot.py
     volumes:
-      - .:/app
+      - ./logs:/var/www/stats/logs
+      - ./demos:/var/www/stats/demos
+      - ./player_cards:/var/www/stats/player_cards
     environment:
       - TOKEN=SEU_TOKEN_AQUI
       - DB_PATH=/var/www/stats/stats.db
     depends_on:
-      - db
-    ports:
-      - "5001:5001"
+      - web
 
   gs_server:
     image: python:3.10-slim
-    command: python /app/scripts/gs_server.py
+    command: python /app/gs_server.py
     ports:
       - "5000:5000"
     volumes:
-      - .:/app
+      - ./logs:/var/www/stats/logs
+      - ./demos:/var/www/stats/demos
+      - ./player_cards:/var/www/stats/player_cards
     environment:
       - DB_PATH=/var/www/stats/stats.db
     depends_on:
-      - db
-
-volumes:
-  db_data:
+      - web

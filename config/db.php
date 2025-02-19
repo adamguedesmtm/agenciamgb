@@ -1,11 +1,6 @@
 <?php
-// config/db.php
-// Conexão com o banco de dados SQLite
-
-$dbPath = '/var/www/agenciamgb/storage/logs/stats.db';
-
 try {
-    $conn = new PDO("sqlite:$dbPath");
+    $conn = new PDO('sqlite:/var/www/stats/stats.db');
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     echo "Erro na conexão: " . $e->getMessage();
@@ -16,12 +11,12 @@ try {
 $conn->exec("
 CREATE TABLE IF NOT EXISTS players (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
+    name TEXT NOT NULL,
     steam_id TEXT UNIQUE,
     kills INTEGER DEFAULT 0,
-    mortes INTEGER DEFAULT 0,
+    deaths INTEGER DEFAULT 0,
     headshots INTEGER DEFAULT 0,
-    kd_ratio REAL GENERATED ALWAYS AS (kills / NULLIF(mortes, 0)) STORED
+    kd_ratio REAL GENERATED ALWAYS AS (kills / NULLIF(deaths, 0)) STORED
 );
 
 CREATE TABLE IF NOT EXISTS demos (
@@ -34,12 +29,12 @@ CREATE TABLE IF NOT EXISTS demos (
 CREATE TABLE IF NOT EXISTS map_pool (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     map_name TEXT NOT NULL,
-    categoria TEXT NOT NULL
+    category TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS active_servers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    categoria TEXT NOT NULL,
+    category TEXT NOT NULL,
     status TEXT DEFAULT 'running',
     score TEXT,
     started_at DATETIME DEFAULT CURRENT_TIMESTAMP

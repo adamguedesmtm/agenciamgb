@@ -1,6 +1,3 @@
--- config/db.sql
--- Script SQL para criar o banco de dados
-
 CREATE TABLE IF NOT EXISTS players (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,

@@ -1,13 +1,21 @@
-FROM php:7.4-apache
+FROM php:8.1-apache
 
-# Install dependencies
-RUN docker-php-ext-install pdo pdo_mysql
+# Instalar dependências
+RUN apt-get update && apt-get install -y \
+    libapache2-mod-php \
+    php-sqlite3 \
+    git \
+    curl \
+    unzip \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy application code
-COPY . /var/www/html/
+# Configurar Apache
+COPY . /var/www/html
+RUN chown -R www-data:www-data /var/www/html
 
-# Set working directory
-WORKDIR /var/www/html/
+# Habilitar mod_rewrite
+RUN a2enmod rewrite
 
-# Expose port
-EXPOSE 80
+# Reiniciar Apache
+CMD ["apache2-foreground"]
