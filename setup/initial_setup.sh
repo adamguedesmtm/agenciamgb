@@ -1,14 +1,21 @@
 #!/bin/bash
-# Script de configuração inicial
 
-echo "Executando configuração inicial..."
+# Update package lists
+sudo apt-get update
 
-# Atualizar sistema
-sudo apt update && sudo apt upgrade -y
+# Install basic packages
+sudo apt-get install -y curl wget git
 
-# Instalar dependências
-sudo apt install -y git docker docker-compose
+# Set up firewall
+sudo ufw allow OpenSSH
+sudo ufw enable
 
-# Executar scripts de configuração adicionais
-./setup_cron_job.sh
-./run_all.sh
+# Set up SSH
+sudo systemctl enable ssh
+sudo systemctl start ssh
+
+# Set up dynamic DNS
+sudo apt-get install -y ddclient
+sudo cp ddclient.conf /etc/ddclient.conf
+
+echo "Initial setup complete."

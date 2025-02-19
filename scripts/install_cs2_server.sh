@@ -1,9 +1,12 @@
 #!/bin/bash
-# Script para instalar e configurar o servidor de CS2
 
-sudo apt update
-sudo apt install -y cs2-server
+# Update package lists
+sudo apt-get update
 
-# Configurar servidor
-echo "Configurando servidor de CS2..."
-# Adicione a configuração necessária aqui
+# Install necessary packages
+sudo apt-get install -y cs2-server
+
+# Configure CS2 server
+sudo cp cs2-server-config /etc/cs2-server/config
+
+echo "CS2 server installed and configured."

@@ -1,9 +1,9 @@
 #!/bin/bash
-# Script para executar todos os scripts de configuração
 
-echo "Executando todos os scripts de configuração..."
-
-# Executar scripts de configuração
+# Run initial setup
 ./initial_setup.sh
+
+# Set up cron job
 ./setup_cron_job.sh
-./other_setup_scripts.sh
+
+echo "All setup scripts executed."

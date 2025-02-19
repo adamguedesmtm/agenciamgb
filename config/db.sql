@@ -1,15 +1,26 @@
--- Script SQL para criar o banco de dados
-CREATE DATABASE dbname;
-USE dbname;
-
 CREATE TABLE players (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    stats JSON NOT NULL
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    kills INTEGER,
+    deaths INTEGER,
+    kd_ratio REAL,
+    headshots INTEGER
 );
 
 CREATE TABLE demos (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    processed BOOLEAN DEFAULT FALSE
+    id INTEGER PRIMARY KEY,
+    player_id INTEGER,
+    demo_file TEXT,
+    FOREIGN KEY (player_id) REFERENCES players(id)
+);
+
+CREATE TABLE map_pool (
+    id INTEGER PRIMARY KEY,
+    map_name TEXT
+);
+
+CREATE TABLE active_servers (
+    id INTEGER PRIMARY KEY,
+    server_name TEXT,
+    status TEXT
 );

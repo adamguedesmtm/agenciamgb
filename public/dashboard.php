@@ -1,18 +1,9 @@
 <?php
-// Display admin dashboard with stats and recent demos
+include('../config/db.php');
+$db = get_db_connection();
 
-// Fetch dashboard data from SQLite database
-// Implement dashboard data fetching logic here
-
+$result = $db->query('SELECT * FROM active_servers');
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    echo "Server: " . $row['server_name'] . " - Status: " . $row['status'] . "<br>";
+}
 ?>
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Admin Dashboard</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
-</head>
-<body>
-    <h1>Admin Dashboard</h1>
-    <!-- Display dashboard stats and recent demos here -->
-</body>
-</html>

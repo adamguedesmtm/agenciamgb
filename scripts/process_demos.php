@@ -1,17 +1,9 @@
 <?php
-// Process demos using CS Demo Manager and save stats to SQLite database
+include('../config/db.php');
+$db = get_db_connection();
 
-function processDemo($demoFile) {
-    // Implement demo processing logic here
-}
-
-// Directory containing demos
-$demoDir = '/path/to/demos';
-
-// Get list of demo files
-$demoFiles = array_diff(scandir($demoDir), array('.', '..'));
-
-foreach ($demoFiles as $demoFile) {
-    processDemo($demoDir . '/' . $demoFile);
-}
+$demo_file = 'path/to/demo.dem';
+// Extract stats from demo file and update database
+// Example:
+$db->exec("INSERT INTO demos (player_id, demo_file) VALUES (1, '$demo_file')");
 ?>

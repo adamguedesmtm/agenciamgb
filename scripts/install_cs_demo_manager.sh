@@ -1,9 +1,12 @@
 #!/bin/bash
-# Script para instalar e configurar o CS Demo Manager
 
-sudo apt update
-sudo apt install -y cs-demo-manager
+# Update package lists
+sudo apt-get update
 
-# Configurar CS Demo Manager
-echo "Configurando CS Demo Manager..."
-# Adicione a configuração necessária aqui
+# Install necessary packages
+sudo apt-get install -y cs-demo-manager
+
+# Configure demo manager
+sudo cp demo-manager-config /etc/cs-demo-manager/config
+
+echo "CS Demo Manager installed and configured."

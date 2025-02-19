@@ -1,18 +1,9 @@
 <?php
-// Display global player rankings
+include('../config/db.php');
+$db = get_db_connection();
 
-// Fetch rankings from SQLite database
-// Implement rankings fetching logic here
-
+$result = $db->query('SELECT * FROM players ORDER BY kd_ratio DESC');
+while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+    echo "Name: " . $row['name'] . " - K/D Ratio: " . $row['kd_ratio'] . "<br>";
+}
 ?>
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Global Rankings</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
-</head>
-<body>
-    <h1>Global Rankings</h1>
-    <!-- Display rankings here -->
-</body>
-</html>

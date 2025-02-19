@@ -1,7 +1,6 @@
 #!/bin/bash
-# Script para configurar cron jobs
 
-echo "Configurando cron jobs..."
+# Add cron job for backup
+(crontab -l 2>/dev/null; echo "0 2 * * * /path/to/backup.sh") | crontab -
 
-# Adicionar cron job para processar demos a cada hora
-(crontab -l 2>/dev/null; echo "0 * * * * /path/to/process_demos.php") | crontab -
+echo "Cron job for backup added."
