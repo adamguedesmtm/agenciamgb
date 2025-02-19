@@ -20,7 +20,7 @@ if ($demo) {
     $outputFile = str_replace('.dem', '.json', $filePath);
 
     // Processa o arquivo usando CS Demo Manager
-    $command = "/usr/local/bin/cs-demo-manager --input {$filePath} --output {$outputFile}";
+    $command = "/usr/local/bin/cs-demo-manager --input {$filePath} --output {$outputFile} --heatmap";
     exec($command, $output, $returnVar);
 
     if ($returnVar === 0) {
@@ -140,6 +140,59 @@ if ($demo) {
 
                 $playerId = $conn->lastInsertId();
                 log_message("Jogador inserido no banco de dados: {$player['name']}");
+            } else {
+                // Atualiza as estatísticas do jogador existente
+                $updatePlayerQuery = "UPDATE players SET kills = kills + :kills, mortes = mortes + :mortes, headshots = headshots + :headshots, assists = assists + :assists, tactical_kills = tactical_kills + :tactical_kills, flank_kills = flank_kills + :flank_kills, entry_kills = entry_kills + :entry_kills, first_seconds_kills = first_seconds_kills + :first_seconds_kills, duels_initiated = duels_initiated + :duels_initiated, awp_kills = awp_kills + :awp_kills, awp_purchases = awp_purchases + :awp_purchases, headshot_percentage = :headshot_percentage, defensive_multi_kills = defensive_multi_kills + :defensive_multi_kills, clutch_wins = clutch_wins + :clutch_wins, survival_rate = :survival_rate, grenade_damage = grenade_damage + :grenade_damage, blinded_enemies = blinded_enemies + :blinded_enemies, molotov_damage = molotov_damage + :molotov_damage, he_kills = he_kills + :he_kills, backstab_kills = backstab_kills + :backstab_kills, control_zone_kills = control_zone_kills + :control_zone_kills, stationary_kills = stationary_kills + :stationary_kills, rotation_time = :rotation_time, eco_rounds_won = eco_rounds_won + :eco_rounds_won, pistol_rounds_won = pistol_rounds_won + :pistol_rounds_won, money_saved = :money_saved, total_damage_taken = total_damage_taken + :total_damage_taken, lowest_kills = :lowest_kills, bot_eco_deaths = bot_eco_deaths + :bot_eco_deaths, first_kill_deaths = first_kill_deaths + :first_kill_deaths, inactive_time = :inactive_time, missed_shots = missed_shots + :missed_shots, clutch_losses = clutch_losses + :clutch_losses, last_alive_first_die = :last_alive_first_die, no_trade_deaths = no_trade_deaths + :no_trade_deaths, missed_before_hit = missed_before_hit + :missed_before_hit, awp_noscope_misses = awp_noscope_misses + :awp_noscope_misses, leg_shots = leg_shots + :leg_shots, wasted_shots = wasted_shots + :wasted_shots, fake_defuse_deaths = fake_defuse_deaths + :fake_defuse_deaths, wandering_time = :wandering_time, self_blinded = self_blinded + :self_blinded, teamkills = teamkills + :teamkills, exploded_by_c4 = exploded_by_c4 + :exploded_by_c4, nade_damage_taken = nade_damage_taken + :nade_damage_taken WHERE id = :player_id";
+                $updatePlayerStmt = $conn->prepare($updatePlayerQuery);
+                $updatePlayerStmt->bindParam(':kills', $kills);
+                $updatePlayerStmt->bindParam(':mortes', $mortes);
+                $updatePlayerStmt->bindParam(':headshots', $headshots);
+                $updatePlayerStmt->bindParam(':assists', $assists);
+                $updatePlayerStmt->bindParam(':tactical_kills', $tactical_kills);
+                $updatePlayerStmt->bindParam(':flank_kills', $flank_kills);
+                $updatePlayerStmt->bindParam(':entry_kills', $entry_kills);
+                $updatePlayerStmt->bindParam(':first_seconds_kills', $first_seconds_kills);
+                $updatePlayerStmt->bindParam(':duels_initiated', $duels_initiated);
+                $updatePlayerStmt->bindParam(':awp_kills', $awp_kills);
+                $updatePlayerStmt->bindParam(':awp_purchases', $awp_purchases);
+                $updatePlayerStmt->bindParam(':headshot_percentage', $headshot_percentage);
+                $updatePlayerStmt->bindParam(':defensive_multi_kills', $defensive_multi_kills);
+                $updatePlayerStmt->bindParam(':clutch_wins', $clutch_wins);
+                $updatePlayerStmt->bindParam(':survival_rate', $survival_rate);
+                $updatePlayerStmt->bindParam(':grenade_damage', $grenade_damage);
+                $updatePlayerStmt->bindParam(':blinded_enemies', $blinded_enemies);
+                $updatePlayerStmt->bindParam(':molotov_damage', $molotov_damage);
+                $updatePlayerStmt->bindParam(':he_kills', $he_kills);
+                $updatePlayerStmt->bindParam(':backstab_kills', $backstab_kills);
+                $updatePlayerStmt->bindParam(':control_zone_kills', $control_zone_kills);
+                $updatePlayerStmt->bindParam(':stationary_kills', $stationary_kills);
+                $updatePlayerStmt->bindParam(':rotation_time', $rotation_time);
+                $updatePlayerStmt->bindParam(':eco_rounds_won', $eco_rounds_won);
+                $updatePlayerStmt->bindParam(':pistol_rounds_won', $pistol_rounds_won);
+                $updatePlayerStmt->bindParam(':money_saved', $money_saved);
+                $updatePlayerStmt->bindParam(':total_damage_taken', $total_damage_taken);
+                $updatePlayerStmt->bindParam(':lowest_kills', $lowest_kills);
+                $updatePlayerStmt->bindParam(':bot_eco_deaths', $bot_eco_deaths);
+                $updatePlayerStmt->bindParam(':first_kill_deaths', $first_kill_deaths);
+                $updatePlayerStmt->bindParam(':inactive_time', $inactive_time);
+                $updatePlayerStmt->bindParam(':missed_shots', $missed_shots);
+                $updatePlayerStmt->bindParam(':clutch_losses', $clutch_losses);
+                $updatePlayerStmt->bindParam(':last_alive_first_die', $last_alive_first_die);
+                $updatePlayerStmt->bindParam(':no_trade_deaths', $no_trade_deaths);
+                $updatePlayerStmt->bindParam(':missed_before_hit', $missed_before_hit);
+                $updatePlayerStmt->bindParam(':awp_noscope_misses', $awp_noscope_misses);
+                $updatePlayerStmt->bindParam(':leg_shots', $leg_shots);
+                $updatePlayerStmt->bindParam(':wasted_shots', $wasted_shots);
+                $updatePlayerStmt->bindParam(':fake_defuse_deaths', $fake_defuse_deaths);
+                $updatePlayerStmt->bindParam(':wandering_time', $wandering_time);
+                $updatePlayerStmt->bindParam(':self_blinded', $self_blinded);
+                $updatePlayerStmt->bindParam(':teamkills', $teamkills);
+                $updatePlayerStmt->bindParam(':exploded_by_c4', $exploded_by_c4);
+                $updatePlayerStmt->bindParam(':nade_damage_taken', $nade_damage_taken);
+                $updatePlayerStmt->bindParam(':player_id', $playerId);
+                $updatePlayerStmt->execute();
+
+                log_message("Estatísticas atualizadas para jogador $nome");
             }
 
             // Insere dados no histórico de jogos
@@ -148,6 +201,13 @@ if ($demo) {
             // Atribui roles únicas e genéricas
             assign_unique_roles($playerId, $player['name'], $player);
             assign_generic_roles($playerId, $player['name'], $player);
+
+            // Gera heatmaps para cada mapa jogado
+            if (isset($player['heatmaps'])) {
+                foreach ($player['heatmaps'] as $map_name => $heatmap_data) {
+                    generate_heatmap($playerId, $map_name, $heatmap_data);
+                }
+            }
         }
 
         // Atualiza o status do arquivo
