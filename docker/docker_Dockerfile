@@ -1,0 +1,33 @@
+FROM php:8.1-apache
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    libapache2-mod-php \
+    php-sqlite3 \
+    git \
+    curl \
+    unzip \
+    ffmpeg \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip3 install flask requests pillow
+
+# Copy application code
+COPY . /var/www/html
+
+# Set working directory
+WORKDIR /var/www/html
+
+# Expose port
+EXPOSE 80
+EXPOSE 5000
+EXPOSE 5001
+
+# Enable Apache modules
+RUN a2enmod rewrite
+
+# Restart Apache
+CMD ["apache2-foreground"]

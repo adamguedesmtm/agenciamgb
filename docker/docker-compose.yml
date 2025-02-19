@@ -12,6 +12,7 @@ services:
       - MYSQL_DATABASE=dbname
       - MYSQL_USER=dbuser
       - MYSQL_PASSWORD=dbpass
+
   db:
     image: mysql:5.7
     environment:
@@ -21,6 +22,31 @@ services:
       MYSQL_PASSWORD: dbpass
     volumes:
       - db_data:/var/lib/mysql
+
+  bot:
+    image: python:3.10-slim
+    command: python /app/scripts/bot.py
+    volumes:
+      - .:/app
+    environment:
+      - TOKEN=SEU_TOKEN_AQUI
+      - DB_PATH=/var/www/stats/stats.db
+    depends_on:
+      - db
+    ports:
+      - "5001:5001"
+
+  gs_server:
+    image: python:3.10-slim
+    command: python /app/scripts/gs_server.py
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    environment:
+      - DB_PATH=/var/www/stats/stats.db
+    depends_on:
+      - db
 
 volumes:
   db_data:
