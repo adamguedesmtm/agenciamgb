@@ -1,33 +1,42 @@
+# docker/Dockerfile
+# Dockerfile para o servidor web Apache
+
 FROM php:8.1-apache
 
-# Install dependencies
+# Instalar dependências necessárias
 RUN apt-get update && apt-get install -y \
-    libapache2-mod-php \
-    php-sqlite3 \
-    git \
-    curl \
-    unzip \
-    ffmpeg \
-    python3 \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd
 
-# Install Python dependencies
-RUN pip3 install flask requests pillow
+# Instalar Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Copy application code
-COPY . /var/www/html
+# Copiar arquivos para o container
+COPY ../public /var/www/html
+COPY ../scripts/process_demos.php /var/www/scripts/process_demos.php
+COPY ../scripts/check_server_status.sh /var/www/scripts/check_server_status.sh
+COPY ../config/db.php /var/www/config/db.php
 
-# Set working directory
-WORKDIR /var/www/html
+# Configurar permissões
+RUN chmod +x /var/www/scripts/process_demos.php
+RUN chmod +x /var/www/scripts/check_server_status.sh
 
-# Expose port
-EXPOSE 80
-EXPOSE 5000
-EXPOSE 5001
+# Instalar dependências do PHP
+RUN composer require doctrine/dbal
 
-# Enable Apache modules
+# Habilitar o módulo rewrite do Apache
 RUN a2enmod rewrite
 
-# Restart Apache
+# Configurar o cron job
+COPY ../setup/setup_cron_job.sh /var/www/setup/setup_cron_job.sh
+RUN chmod +x /var/www/setup/setup_cron_job.sh
+RUN /var/www/setup/setup_cron_job.sh
+
+# Expor a porta 80
+EXPOSE 80
+
+# Reiniciar o Apache
 CMD ["apache2-foreground"]

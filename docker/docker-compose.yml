@@ -1,40 +1,43 @@
+# docker/docker-compose.yml
+# Orquestração dos serviços (web server, bot do Discord, servidor Flask)
+
 version: '3.8'
 
 services:
   web:
-    build: .
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
     ports:
       - "80:80"
     volumes:
-      - ./logs:/var/www/stats/logs
-      - ./demos:/var/www/stats/demos
-      - ./player_cards:/var/www/stats/player_cards
-    environment:
-      - DB_PATH=/var/www/stats/stats.db
+      - ./storage:/var/www/agenciamgb/storage
+      - ./scripts:/var/www/scripts
+      - ./public:/var/www/html
+      - ./config:/var/www/config
 
   bot:
-    image: python:3.10-slim
-    command: python /app/bot.py
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
     volumes:
-      - ./logs:/var/www/stats/logs
-      - ./demos:/var/www/stats/demos
-      - ./player_cards:/var/www/stats/player_cards
+      - ./storage:/var/www/agenciamgb/storage
+      - ./scripts:/var/www/scripts
+      - ./public:/var/www/html
+      - ./config:/var/www/config
     environment:
       - TOKEN=SEU_TOKEN_AQUI
-      - DB_PATH=/var/www/stats/stats.db
-    depends_on:
-      - web
+    command: ["python3", "/var/www/scripts/bot.py"]
 
-  gs_server:
-    image: python:3.10-slim
-    command: python /app/gs_server.py
+  flask:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
     ports:
       - "5000:5000"
     volumes:
-      - ./logs:/var/www/stats/logs
-      - ./demos:/var/www/stats/demos
-      - ./player_cards:/var/www/stats/player_cards
-    environment:
-      - DB_PATH=/var/www/stats/stats.db
-    depends_on:
-      - web
+      - ./storage:/var/www/agenciamgb/storage
+      - ./scripts:/var/www/scripts
+      - ./public:/var/www/html
+      - ./config:/var/www/config
+    command: ["python3", "/var/www/scripts/gs_server.py"]
