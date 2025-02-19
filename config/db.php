@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS game_history (
 );
 ");
 
+$conn->exec("
+CREATE TABLE IF NOT EXISTS heatmaps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL,
+    map_name TEXT NOT NULL,
+    heatmap_path TEXT NOT NULL,
+    FOREIGN KEY (player_id) REFERENCES players (id)
+);
+");
+
 function log_message($message, $logFile = '/var/www/agenciamgb/storage/logs/general.log') {
     $timestamp = date('Y-m-d H:i:s');
     file_put_contents($logFile, "[$timestamp] $message\n", FILE_APPEND);
@@ -209,11 +219,52 @@ function insert_game_history($demo_id, $player_id, $stats) {
     global $conn;
 
     $kills = $stats['kills'];
-    $mortes = $stats['mortes'];
+    $mortes = $stats['deaths'];
     $headshots = $stats['headshots'];
     $assists = $stats['assists'];
+    $tactical_kills = $stats['tactical_kills'];
+    $flank_kills = $stats['flank_kills'];
+    $entry_kills = $stats['entry_kills'];
+    $first_seconds_kills = $stats['first_seconds_kills'];
+    $duels_initiated = $stats['duels_initiated'];
+    $awp_kills = $stats['awp_kills'];
+    $awp_purchases = $stats['awp_purchases'];
+    $headshot_percentage = $stats['headshot_percentage'];
+    $defensive_multi_kills = $stats['defensive_multi_kills'];
+    $clutch_wins = $stats['clutch_wins'];
+    $survival_rate = $stats['survival_rate'];
+    $grenade_damage = $stats['grenade_damage'];
+    $blinded_enemies = $stats['blinded_enemies'];
+    $molotov_damage = $stats['molotov_damage'];
+    $he_kills = $stats['he_kills'];
+    $backstab_kills = $stats['backstab_kills'];
+    $control_zone_kills = $stats['control_zone_kills'];
+    $stationary_kills = $stats['stationary_kills'];
+    $rotation_time = $stats['rotation_time'];
+    $eco_rounds_won = $stats['eco_rounds_won'];
+    $pistol_rounds_won = $stats['pistol_rounds_won'];
+    $money_saved = $stats['money_saved'];
+    $total_damage_taken = $stats['total_damage_taken'];
+    $lowest_kills = $stats['lowest_kills'];
+    $bot_eco_deaths = $stats['bot_eco_deaths'];
+    $first_kill_deaths = $stats['first_kill_deaths'];
+    $inactive_time = $stats['inactive_time'];
+    $missed_shots = $stats['missed_shots'];
+    $clutch_losses = $stats['clutch_losses'];
+    $last_alive_first_die = $stats['last_alive_first_die'];
+    $no_trade_deaths = $stats['no_trade_deaths'];
+    $missed_before_hit = $stats['missed_before_hit'];
+    $awp_noscope_misses = $stats['awp_noscope_misses'];
+    $leg_shots = $stats['leg_shots'];
+    $wasted_shots = $stats['wasted_shots'];
+    $fake_defuse_deaths = $stats['fake_defuse_deaths'];
+    $wandering_time = $stats['wandering_time'];
+    $self_blinded = $stats['self_blinded'];
+    $teamkills = $stats['teamkills'];
+    $exploded_by_c4 = $stats['exploded_by_c4'];
+    $nade_damage_taken = $stats['nade_damage_taken'];
 
-    $insertQuery = "INSERT INTO game_history (demo_id, player_id, kills, mortes, headshots, assists) VALUES (:demo_id, :player_id, :kills, :mortes, :headshots, :assists)";
+    $insertQuery = "INSERT INTO game_history (demo_id, player_id, kills, mortes, headshots, assists, tactical_kills, flank_kills, entry_kills, first_seconds_kills, duels_initiated, awp_kills, awp_purchases, headshot_percentage, defensive_multi_kills, clutch_wins, survival_rate, grenade_damage, blinded_enemies, molotov_damage, he_kills, backstab_kills, control_zone_kills, stationary_kills, rotation_time, eco_rounds_won, pistol_rounds_won, money_saved, total_damage_taken, lowest_kills, bot_eco_deaths, first_kill_deaths, inactive_time, missed_shots, clutch_losses, last_alive_first_die, no_trade_deaths, missed_before_hit, awp_noscope_misses, leg_shots, wasted_shots, fake_defuse_deaths, wandering_time, self_blinded, teamkills, exploded_by_c4, nade_damage_taken) VALUES (:demo_id, :player_id, :kills, :mortes, :headshots, :assists, :tactical_kills, :flank_kills, :entry_kills, :first_seconds_kills, :duels_initiated, :awp_kills, :awp_purchases, :headshot_percentage, :defensive_multi_kills, :clutch_wins, :survival_rate, :grenade_damage, :blinded_enemies, :molotov_damage, :he_kills, :backstab_kills, :control_zone_kills, :stationary_kills, :rotation_time, :eco_rounds_won, :pistol_rounds_won, :money_saved, :total_damage_taken, :lowest_kills, :bot_eco_deaths, :first_kill_deaths, :inactive_time, :missed_shots, :clutch_losses, :last_alive_first_die, :no_trade_deaths, :missed_before_hit, :awp_noscope_misses, :leg_shots, :wasted_shots, :fake_defuse_deaths, :wandering_time, :self_blinded, :teamkills, :exploded_by_c4, :nade_damage_taken)";
     $insertStmt = $conn->prepare($insertQuery);
     $insertStmt->bindParam(':demo_id', $demo_id);
     $insertStmt->bindParam(':player_id', $player_id);
@@ -221,8 +272,87 @@ function insert_game_history($demo_id, $player_id, $stats) {
     $insertStmt->bindParam(':mortes', $mortes);
     $insertStmt->bindParam(':headshots', $headshots);
     $insertStmt->bindParam(':assists', $assists);
+    $insertStmt->bindParam(':tactical_kills', $tactical_kills);
+    $insertStmt->bindParam(':flank_kills', $flank_kills);
+    $insertStmt->bindParam(':entry_kills', $entry_kills);
+    $insertStmt->bindParam(':first_seconds_kills', $first_seconds_kills);
+    $insertStmt->bindParam(':duels_initiated', $duels_initiated);
+    $insertStmt->bindParam(':awp_kills', $awp_kills);
+    $insertStmt->bindParam(':awp_purchases', $awp_purchases);
+    $insertStmt->bindParam(':headshot_percentage', $headshot_percentage);
+    $insertStmt->bindParam(':defensive_multi_kills', $defensive_multi_kills);
+    $insertStmt->bindParam(':clutch_wins', $clutch_wins);
+    $insertStmt->bindParam(':survival_rate', $survival_rate);
+    $insertStmt->bindParam(':grenade_damage', $grenade_damage);
+    $insertStmt->bindParam(':blinded_enemies', $blinded_enemies);
+    $insertStmt->bindParam(':molotov_damage', $molotov_damage);
+    $insertStmt->bindParam(':he_kills', $he_kills);
+    $insertStmt->bindParam(':backstab_kills', $backstab_kills);
+    $insertStmt->bindParam(':control_zone_kills', $control_zone_kills);
+    $insertStmt->bindParam(':stationary_kills', $stationary_kills);
+    $insertStmt->bindParam(':rotation_time', $rotation_time);
+    $insertStmt->bindParam(':eco_rounds_won', $eco_rounds_won);
+    $insertStmt->bindParam(':pistol_rounds_won', $pistol_rounds_won);
+    $insertStmt->bindParam(':money_saved', $money_saved);
+    $insertStmt->bindParam(':total_damage_taken', $total_damage_taken);
+    $insertStmt->bindParam(':lowest_kills', $lowest_kills);
+    $insertStmt->bindParam(':bot_eco_deaths', $bot_eco_deaths);
+    $insertStmt->bindParam(':first_kill_deaths', $first_kill_deaths);
+    $insertStmt->bindParam(':inactive_time', $inactive_time);
+    $insertStmt->bindParam(':missed_shots', $missed_shots);
+    $insertStmt->bindParam(':clutch_losses', $clutch_losses);
+    $insertStmt->bindParam(':last_alive_first_die', $last_alive_first_die);
+    $insertStmt->bindParam(':no_trade_deaths', $no_trade_deaths);
+    $insertStmt->bindParam(':missed_before_hit', $missed_before_hit);
+    $insertStmt->bindParam(':awp_noscope_misses', $awp_noscope_misses);
+    $insertStmt->bindParam(':leg_shots', $leg_shots);
+    $insertStmt->bindParam(':wasted_shots', $wasted_shots);
+    $insertStmt->bindParam(':fake_defuse_deaths', $fake_defuse_deaths);
+    $insertStmt->bindParam(':wandering_time', $wandering_time);
+    $insertStmt->bindParam(':self_blinded', $self_blinded);
+    $insertStmt->bindParam(':teamkills', $teamkills);
+    $insertStmt->bindParam(':exploded_by_c4', $exploded_by_c4);
+    $insertStmt->bindParam(':nade_damage_taken', $nade_damage_taken);
     $insertStmt->execute();
 
     log_message("Histórico de jogo inserido para demo $demo_id e jogador $player_id");
+}
+
+function generate_heatmap($player_id, $map_name, $heatmap_data) {
+    global $conn;
+
+    $heatmap_dir = '/var/www/agenciamgb/storage/player_cards/';
+    if (!is_dir($heatmap_dir)) {
+        mkdir($heatmap_dir, 0777, true);
+    }
+
+    $heatmap_path = $heatmap_dir . "heatmap_{$player_id}_{$map_name}.png";
+
+    // Gera o heatmap usando as bibliotecas necessárias (ex: GD Library)
+    // Aqui está um exemplo simplificado de como gerar um heatmap
+    $image = imagecreatetruecolor(1024, 512);
+    $background_color = imagecolorallocate($image, 255, 255, 255);
+    imagefill($image, 0, 0, $background_color);
+
+    // Exemplo de plotagem de pontos no heatmap
+    foreach ($heatmap_data as $point) {
+        $x = $point['x'];
+        $y = $point['y'];
+        $color = imagecolorallocate($image, 255, 0, 0);
+        imagesetpixel($image, $x, $y, $color);
+    }
+
+    imagepng($image, $heatmap_path);
+    imagedestroy($image);
+
+    // Insere o caminho do heatmap no banco de dados
+    $insertQuery = "INSERT INTO heatmaps (player_id, map_name, heatmap_path) VALUES (:player_id, :map_name, :heatmap_path)";
+    $insertStmt = $conn->prepare($insertQuery);
+    $insertStmt->bindParam(':player_id', $player_id);
+    $insertStmt->bindParam(':map_name', $map_name);
+    $insertStmt->bindParam(':heatmap_path', $heatmap_path);
+    $insertStmt->execute();
+
+    log_message("Heatmap gerado e salvo para jogador $player_id no mapa $map_name: $heatmap_path");
 }
 ?>
