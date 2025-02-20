@@ -12,6 +12,25 @@ import io
 import datetime
 import subprocess
 
+# Função para descriptografar uma string
+def decrypt_string(encrypted_string, encryption_key):
+    command = f"echo -n \"{encrypted_string}\" | openssl enc -aes-256-cbc -a -d -salt -pass pass:\"{encryption_key}\""
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+# Carregar as credenciais do .env
+dotenv = {}
+with open('../.env', 'r') as file:
+    for line in file:
+        key, value = line.strip().split('=', 1)
+        dotenv[key] = value
+
+# Descriptografar as credenciais
+encryption_key = dotenv['ENCRYPTION_KEY']
+discord_bot_token = decrypt_string(dotenv['DISCORD_BOT_TOKEN'], encryption_key)
+steam_api_key = decrypt_string(dotenv['STEAM_API_KEY'], encryption_key)
+
+
 # Configuração do bot
 TOKEN = 'SEU_TOKEN_AQUI'
 intents = discord.Intents.default()
