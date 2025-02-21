@@ -1,206 +1,178 @@
 """
-Player Card System for CS2 Server
+Player Card Generator
 Author: adamguedesmtm
-Created: 2025-02-21 13:26:06
+Created: 2025-02-21 13:56:20
 """
 
-from typing import Dict, Optional
 from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime
-import aiofiles
+from typing import Dict, List, Optional, Tuple
+import aiohttp
+import io
 import os
 from pathlib import Path
-from .metrics import MetricsManager
 from .logger import Logger
+from .metrics import MetricsManager
 
 class PlayerCard:
-    def __init__(self, metrics_manager: MetricsManager):
-        self.logger = Logger('player_card')
-        self.metrics = metrics_manager
-        
-        # Diretórios
-        self._assets_dir = Path('/opt/cs2server/assets')
-        self._cache_dir = Path('/tmp/player_cards')
-        self._font_path = str(self._assets_dir / 'fonts/cs2.ttf')
-        
-        # Criar diretórios
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Templates
-        self._card_bg = str(self._assets_dir / 'templates/card_bg.png')
-        self._rank_icons = {
-            'silver1': str(self._assets_dir / 'ranks/silver1.png'),
-            'silver2': str(self._assets_dir / 'ranks/silver2.png'),
-            'silver3': str(self._assets_dir / 'ranks/silver3.png'),
-            'silver4': str(self._assets_dir / 'ranks/silver4.png'),
-            'silver_elite': str(self._assets_dir / 'ranks/silver_elite.png'),
-            'silver_elite_master': str(self._assets_dir / 'ranks/silver_elite_master.png'),
-            'gold1': str(self._assets_dir / 'ranks/gold1.png'),
-            'gold2': str(self._assets_dir / 'ranks/gold2.png'),
-            'gold3': str(self._assets_dir / 'ranks/gold3.png'),
-            'gold_nova_master': str(self._assets_dir / 'ranks/gold_nova_master.png'),
-            'mg1': str(self._assets_dir / 'ranks/mg1.png'),
-            'mg2': str(self._assets_dir / 'ranks/mg2.png'),
-            'mge': str(self._assets_dir / 'ranks/mge.png'),
-            'dmg': str(self._assets_dir / 'ranks/dmg.png'),
-            'le': str(self._assets_dir / 'ranks/le.png'),
-            'lem': str(self._assets_dir / 'ranks/lem.png'),
-            'supreme': str(self._assets_dir / 'ranks/supreme.png'),
-            'global': str(self._assets_dir / 'ranks/global.png')
-        }
-        
-    async def generate_card(self,
-                          player_id: str,
-                          player_stats: Dict) -> Optional[str]:
-        """
-        Gerar card do jogador
-        
-        Args:
-            player_id: ID do jogador
-            player_stats: Estatísticas do jogador
-                {
-                    'name': str,
-                    'rank': str,
-                    'matches': int,
-                    'wins': int,
-                    'kills': int,
-                    'deaths': int,
-                    'assists': int,
-                    'headshots': int,
-                    'mvps': int,
-                    'hours_played': int
-                }
-                
-        Returns:
-            Caminho para imagem gerada ou None se erro
-        """
+    def __init__(self,
+                 assets_dir: str = "/opt/cs2server/assets",
+                 logger: Optional[Logger] = None,
+                 metrics: Optional[MetricsManager] = None):
+        self.assets_dir = Path(assets_dir)
+        self.logger = logger or Logger('player_card')
+        self.metrics = metrics
+        self.fonts = self._load_fonts()
+        self.rank_images = self._load_rank_images()
+        self.template = self._load_template()
+
+    def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
+        """Carregar fontes necessárias"""
         try:
-            # Carregar template
-            card = Image.open(self._card_bg).convert('RGBA')
-            draw = ImageDraw.Draw(card)
-            
-            # Fontes
-            title_font = ImageFont.truetype(self._font_path, 48)
-            stats_font = ImageFont.truetype(self._font_path, 32)
-            small_font = ImageFont.truetype(self._font_path, 24)
-            
-            # Nome do jogador
-            draw.text(
-                (400, 50),
-                player_stats['name'],
-                font=title_font,
-                fill='white',
-                anchor='mm'
-            )
-            
-            # Rank (se disponível)
-            if player_stats.get('rank') in self._rank_icons:
-                rank_icon = Image.open(
-                    self._rank_icons[player_stats['rank']]
-                ).convert('RGBA')
-                rank_icon.thumbnail((100, 100))
-                card.paste(
-                    rank_icon,
-                    (50, 30),
-                    rank_icon
-                )
-                
-            # Stats principais
-            stats_y = 150
-            stats = [
-                f"Partidas: {player_stats['matches']}",
-                f"Vitórias: {player_stats['wins']}",
-                f"K/D: {player_stats['kills']}/{player_stats['deaths']}",
-                f"Assistências: {player_stats['assists']}",
-                f"Headshots: {player_stats['headshots']}",
-                f"MVPs: {player_stats['mvps']}"
-            ]
-            
-            for stat in stats:
-                draw.text(
-                    (400, stats_y),
-                    stat,
-                    font=stats_font,
-                    fill='white',
-                    anchor='mm'
-                )
-                stats_y += 40
-                
-            # Horas jogadas
-            draw.text(
-                (400, 400),
-                f"Horas jogadas: {player_stats['hours_played']}",
-                font=small_font,
-                fill='white',
-                anchor='mm'
-            )
-            
-            # Calcular win rate
-            if player_stats['matches'] > 0:
-                win_rate = (player_stats['wins'] / player_stats['matches']) * 100
-                draw.text(
-                    (400, 440),
-                    f"Win Rate: {win_rate:.1f}%",
-                    font=small_font,
-                    fill='white',
-                    anchor='mm'
-                )
-                
-            # Calcular K/D ratio
-            if player_stats['deaths'] > 0:
-                kd_ratio = player_stats['kills'] / player_stats['deaths']
-                draw.text(
-                    (400, 480),
-                    f"K/D Ratio: {kd_ratio:.2f}",
-                    font=small_font,
-                    fill='white',
-                    anchor='mm'
-                )
-                
-            # Timestamp
-            draw.text(
-                (750, 480),
-                datetime.utcnow().strftime('%Y-%m-%d'),
-                font=small_font,
-                fill='gray',
-                anchor='rm'
-            )
-            
-            # Salvar imagem
-            output_path = self._cache_dir / f"card_{player_id}.png"
-            card.save(output_path, "PNG")
-            
-            await self.metrics.record_metric(
-                'player_card.generated',
-                1,
-                {'player_id': player_id}
-            )
-            
-            return str(output_path)
-            
+            fonts_dir = self.assets_dir / 'fonts'
+            return {
+                'title': ImageFont.truetype(str(fonts_dir / 'title.ttf'), 48),
+                'stats': ImageFont.truetype(str(fonts_dir / 'stats.ttf'), 32),
+                'details': ImageFont.truetype(str(fonts_dir / 'details.ttf'), 24)
+            }
         except Exception as e:
-            self.logger.logger.error(f"Erro ao gerar card: {e}")
+            self.logger.logger.error(f"Erro ao carregar fontes: {e}")
+            return {}
+
+    def _load_rank_images(self) -> Dict[str, Image.Image]:
+        """Carregar imagens dos rankings"""
+        try:
+            ranks_dir = self.assets_dir / 'ranks'
+            ranks = {}
+            for rank_file in ranks_dir.glob('*.png'):
+                ranks[rank_file.stem] = Image.open(rank_file)
+            return ranks
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao carregar ranks: {e}")
+            return {}
+
+    def _load_template(self) -> Optional[Image.Image]:
+        """Carregar template do card"""
+        try:
+            template_path = self.assets_dir / 'templates' / 'player_card.png'
+            return Image.open(template_path)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao carregar template: {e}")
             return None
-            
-    async def clean_cache(self, max_age_hours: int = 24):
-        """Limpar cache de cards antigos"""
+
+    async def get_player_stats(self, player_id: int) -> Dict:
+        """Obter estatísticas do jogador"""
+        # Simulação de estatísticas (substituir por integração real)
+        return {
+            'rank': 'gold_nova_master',
+            'matches': 150,
+            'wins': 89,
+            'losses': 61,
+            'draws': 0,
+            'winrate': 59.3,
+            'rating': 1.15,
+            'kd_ratio': 1.23,
+            'headshot_percent': 48.7,
+            'accuracy': 22.4,
+            'most_played_maps': [
+                ('de_mirage', 45),
+                ('de_inferno', 38),
+                ('de_dust2', 34)
+            ]
+        }
+
+    async def generate(self, player_id: int, player_name: str, avatar_url: Optional[str] = None) -> Optional[io.BytesIO]:
+        """Gerar card do jogador"""
         try:
-            now = datetime.utcnow()
-            count = 0
+            # Obter estatísticas
+            stats = await self.get_player_stats(player_id)
             
-            for file in self._cache_dir.glob('*.png'):
-                # Verificar idade do arquivo
-                mtime = datetime.fromtimestamp(file.stat().st_mtime)
-                age = now - mtime
-                
-                if age.total_seconds() > (max_age_hours * 3600):
-                    file.unlink()
-                    count += 1
-                    
-            await self.metrics.record_metric(
-                'player_card.cache_cleaned',
-                count
-            )
+            if not self.template:
+                raise Exception("Template não carregado")
+
+            # Criar nova imagem
+            card = self.template.copy()
+            draw = ImageDraw.Draw(card)
+
+            # Adicionar avatar se disponível
+            if avatar_url:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(avatar_url) as response:
+                            if response.status == 200:
+                                avatar_data = await response.read()
+                                avatar = Image.open(io.BytesIO(avatar_data))
+                                avatar = avatar.resize((128, 128))
+                                card.paste(avatar, (50, 50))
+                except Exception as e:
+                    self.logger.logger.error(f"Erro ao carregar avatar: {e}")
+
+            # Adicionar nome e rank
+            draw.text((200, 50), player_name, font=self.fonts['title'])
+            rank_img = self.rank_images.get(stats['rank'])
+            if rank_img:
+                card.paste(rank_img, (200, 120), rank_img)
+
+            # Adicionar estatísticas principais
+            stats_y = 250
+            draw.text((50, stats_y), f"Partidas: {stats['matches']}", font=self.fonts['stats'])
+            draw.text((50, stats_y + 40), f"Vitórias: {stats['wins']}", font=self.fonts['stats'])
+            draw.text((50, stats_y + 80), f"Winrate: {stats['winrate']}%", font=self.fonts['stats'])
             
+            draw.text((300, stats_y), f"Rating: {stats['rating']}", font=self.fonts['stats'])
+            draw.text((300, stats_y + 40), f"K/D: {stats['kd_ratio']}", font=self.fonts['stats'])
+            draw.text((300, stats_y + 80), f"HS%: {stats['headshot_percent']}%", font=self.fonts['stats'])
+
+            # Adicionar mapas mais jogados
+            maps_y = 400
+            draw.text((50, maps_y), "Mapas mais jogados:", font=self.fonts['stats'])
+            for i, (map_name, count) in enumerate(stats['most_played_maps']):
+                draw.text(
+                    (50, maps_y + 40 + (i * 30)),
+                    f"{map_name}: {count} partidas",
+                    font=self.fonts['details']
+                )
+
+            # Salvar imagem
+            output = io.BytesIO()
+            card.save(output, format='PNG')
+            output.seek(0)
+
+            if self.metrics:
+                await self.metrics.record_command('player_card_generated')
+
+            return output
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao limpar cache: {e}")
+            self.logger.logger.error(f"Erro ao gerar player card: {e}")
+            return None
+
+    async def get_top_players(self, limit: int = 10) -> List[Dict]:
+        """Obter top jogadores"""
+        # Simulação (substituir por integração real)
+        return [
+            {
+                'name': f'Player{i}',
+                'rating': round(2.0 - (i * 0.1), 2),
+                'kd': round(1.5 - (i * 0.05), 2),
+                'hs_percent': 50 - i
+            }
+            for i in range(limit)
+        ]
+
+    async def get_recent_matches(self, player_id: int, limit: int = 5) -> List[Dict]:
+        """Obter partidas recentes do jogador"""
+        # Simulação (substituir por integração real)
+        maps = ['de_dust2', 'de_mirage', 'de_inferno', 'de_overpass', 'de_ancient']
+        return [
+            {
+                'map': maps[i % len(maps)],
+                'won': i % 2 == 0,
+                'team_score': 16 if i % 2 == 0 else 13,
+                'enemy_score': 13 if i % 2 == 0 else 16,
+                'kills': 20 + i,
+                'deaths': 15 + i,
+                'assists': 5 + i,
+                'rating': round(1.2 - (i * 0.1), 2)
+            }
+            for i in range(limit)
+        ]

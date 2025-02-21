@@ -1,238 +1,196 @@
 """
-Wingman Manager for CS2 Server (2v2)
+Wingman Manager
 Author: adamguedesmtm
-Created: 2025-02-21 13:22:35
+Created: 2025-02-21 13:53:21
 """
 
-from typing import Dict, List, Optional, Tuple
-from .rcon_manager import RCONManager
-from .config_manager import ConfigManager
-from .metrics import MetricsManager
+import asyncio
+from typing import Dict, List, Optional
 from .logger import Logger
-from .map_manager import MapManager, MapInfo, MapStatus
-from datetime import datetime
-
-class WingmanStatus:
-    WARMUP = "warmup"
-    LIVE = "live"
-    HALFTIME = "halftime"
-    OVERTIME = "overtime"
-    FINISHED = "finished"
+from .metrics import MetricsManager
+from .rcon_manager import RCONManager
+from .map_manager import MapManager
 
 class WingmanManager:
     def __init__(self,
-                 rcon_manager: RCONManager,
-                 config_manager: ConfigManager,
-                 metrics_manager: MetricsManager):
-        self.logger = Logger('wingman_manager')
-        self.rcon = rcon_manager
-        self.config = config_manager
-        self.metrics = metrics_manager
-        self.map_manager = MapManager()
-        
-        self._current_match: Optional[Dict] = None
-        self._matches_history: List[Dict] = []
-        self._backup_config = {}
+                 rcon: RCONManager,
+                 map_manager: MapManager,
+                 logger: Optional[Logger] = None,
+                 metrics: Optional[MetricsManager] = None):
+        self.rcon = rcon
+        self.map_manager = map_manager
+        self.logger = logger or Logger('wingman_manager')
+        self.metrics = metrics
+        self.active_matches: Dict[str, Dict] = {}
+        self.match_counter = 0
 
-    async def setup_wingman_config(self):
-        """Configurar servidor para 2v2"""
+    async def create_match(self, players: List[Dict]) -> Optional[str]:
+        """Criar nova partida 2v2"""
         try:
-            # Backup config atual
-            self._backup_config = {
-                'mp_maxrounds': await self.rcon.execute("mp_maxrounds"),
-                'mp_overtime_enable': await self.rcon.execute("mp_overtime_enable")
-            }
+            if len(players) != 4:
+                raise ValueError("Wingman requer exatamente 4 jogadores")
+
+            # Gerar ID único para a partida
+            self.match_counter += 1
+            match_id = f"wm_{self.match_counter}"
+
+            # Selecionar mapa
+            map_name = await self.map_manager.get_next_map('wingman')
+            if not map_name:
+                raise Exception("Nenhum mapa disponível")
+
+            # Dividir times (2v2)
+            team1 = players[:2]
+            team2 = players[2:]
+
+            # Configurar servidor
+            await self.rcon.execute("mp_teamsize 2")
+            await self.rcon.execute("mp_maxrounds 16")
+            await self.rcon.execute("mp_overtime_enable 1")
             
-            commands = [
-                "mp_maxrounds 16",           # Primeiro a 9
-                "mp_overtime_enable 1",       # Overtime habilitado
-                "mp_overtime_maxrounds 6",    # MR6 no overtime
-                "mp_roundtime 1.92",         # 1:55 tempo de round
-                "mp_freezetime 10",          # 10s freezetime (menor que 5v5)
-                "sv_maxplayers 4",           # Max 4 jogadores
-                "mp_warmuptime 30",          # 30s warmup
-                "mp_warmup_pausetimer 0",    # Não pausar timer
-                "mp_halftime_duration 10",    # 10s intervalo
-                "mp_match_can_clinch 1",     # Vitória antecipada
-                "mp_maxmoney 16000",         # Max dinheiro
-                "mp_startmoney 800",         # Dinheiro inicial
-                "mp_friendlyfire 1",         # Fogo amigo
-                "sv_deadtalk 0",             # Mortos não falam
-                "sv_talk_enemy_dead 0",      # Sem all chat mortos
-                "sv_talk_enemy_living 0",    # Sem all chat vivos
-                "sv_competitive_minspec 1",   # Config competitiva
-                "mp_overtime_starthealth 100", # HP overtime
-                "mp_overtime_startmoney 10000", # Dinheiro overtime
-                "sv_coaching_enabled 0",      # Sem coaches em 2v2
-                "mp_autoteambalance 0",      # Sem auto-balance
-                "mp_limitteams 0"            # Sem limite times
-            ]
-            
-            for cmd in commands:
-                await self.rcon.execute(cmd)
-                
-            self.logger.logger.info("Configurações wingman aplicadas")
-            return True
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao configurar 2v2: {e}")
-            return False
-            
-    async def create_match(self,
-                          team1: Dict[str, any],
-                          team2: Dict[str, any],
-                          map_name: str) -> bool:
-        """
-        Criar partida 2v2
-        
-        Args:
-            team1: Info do time 1 (name, players)
-            team2: Info do time 2
-            map_name: Mapa escolhido
-            
-        Returns:
-            True se criada com sucesso
-        """
-        try:
-            if len(team1['players']) != 2 or len(team2['players']) != 2:
-                return False
-                
-            # Setup servidor
-            await self.setup_wingman_config()
-            
+            # Gerar senha única
+            match_password = f"wm_{match_id}"
+            await self.rcon.set_password(match_password)
+
+            # Trocar mapa
+            if not await self.rcon.change_map(map_name):
+                raise Exception("Falha ao trocar mapa")
+
             # Registrar partida
-            match_id = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            self._current_match = {
+            self.active_matches[match_id] = {
                 'id': match_id,
+                'map': map_name,
                 'team1': team1,
                 'team2': team2,
-                'map': map_name,
-                'score': {'team1': 0, 'team2': 0},
-                'status': WingmanStatus.WARMUP,
-                'start_time': datetime.utcnow().isoformat()
+                'password': match_password,
+                'status': 'setup',
+                'score_team1': 0,
+                'score_team2': 0
             }
-            
-            # Carregar mapa
-            await self.load_map(map_name)
-            
-            # Setup times
-            await self._setup_teams(team1, team2)
-            
-            await self.metrics.record_metric(
-                'wingman.match_created',
-                1,
-                {
-                    'map': map_name,
-                    'teams': f"{team1['name']}_{team2['name']}"
-                }
-            )
-            
-            return True
-            
+
+            if self.metrics:
+                await self.metrics.record_match_start('wingman')
+
+            return match_id
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao criar partida: {e}")
-            return False
-            
-    async def _setup_teams(self, team1: Dict, team2: Dict):
-        """Setup inicial dos times"""
+            self.logger.logger.error(f"Erro ao criar partida wingman: {e}")
+            return None
+
+    async def get_match_info(self, match_id: str) -> Optional[Dict]:
+        """Obter informações da partida"""
         try:
-            # Limpar times
-            await self.rcon.execute("mp_teamswitch_clear")
-            
-            # Time 1 = CT
-            for player in team1['players']:
-                await self.rcon.execute(f"mp_teamswitch_ct {player}")
-                
-            # Time 2 = T    
-            for player in team2['players']:
-                await self.rcon.execute(f"mp_teamswitch_t {player}")
-                
+            if match_id not in self.active_matches:
+                return None
+
+            match = self.active_matches[match_id]
+            server_info = await self.rcon.get_status()
+
+            return {
+                'id': match['id'],
+                'map': match['map'],
+                'ip': self.rcon.host,
+                'port': self.rcon.port,
+                'password': match['password'],
+                'status': match['status'],
+                'team1': match['team1'],
+                'team2': match['team2'],
+                'score_team1': match['score_team1'],
+                'score_team2': match['score_team2'],
+                'players_online': server_info['players_online'] if server_info else 0
+            }
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao setup times: {e}")
-            
-    async def load_map(self, map_name: str) -> bool:
-        """Carregar mapa wingman"""
+            self.logger.logger.error(f"Erro ao obter info da partida: {e}")
+            return None
+
+    async def update_match_score(self, match_id: str, team1_score: int, team2_score: int) -> bool:
+        """Atualizar placar da partida"""
         try:
-            if map_name not in self.map_manager._wingman_maps:
+            if match_id not in self.active_matches:
                 return False
-                
-            await self.rcon.execute(f"map {map_name}")
-            await self.rcon.execute("mp_warmup_start")
-            
+
+            self.active_matches[match_id].update({
+                'score_team1': team1_score,
+                'score_team2': team2_score
+            })
+
             return True
-            
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao carregar mapa: {e}")
+            self.logger.logger.error(f"Erro ao atualizar placar: {e}")
             return False
-            
-    async def start_match(self) -> bool:
-        """Iniciar partida (após warmup)"""
+
+    async def end_match(self, match_id: str) -> bool:
+        """Finalizar partida"""
         try:
-            if not self._current_match:
+            if match_id not in self.active_matches:
                 return False
+
+            match = self.active_matches[match_id]
+            
+            # Registrar métricas
+            if self.metrics:
+                await self.metrics.record_match_duration('wingman')
                 
+                # Registrar stats dos jogadores
+                for team in [match['team1'], match['team2']]:
+                    for player in team:
+                        await self.metrics.record_player_stat(
+                            'matches_played',
+                            player['id']
+                        )
+
+            # Limpar servidor
             await self.rcon.execute("mp_warmup_end")
-            self._current_match['status'] = WingmanStatus.LIVE
-            
-            await self.metrics.record_metric(
-                'wingman.match_started',
-                1,
-                {'match_id': self._current_match['id']}
-            )
-            
+            await self.rcon.set_password("")
+
+            # Remover partida
+            del self.active_matches[match_id]
+
             return True
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao iniciar partida: {e}")
-            return False
-            
-    async def end_match(self, force: bool = False) -> bool:
-        """Finalizar partida atual"""
-        try:
-            if not self._current_match:
-                return False
-                
-            if force:
-                await self.rcon.execute("mp_endmatch_votenextmap 0")
-                await self.rcon.execute("mp_endmatch")
-                
-            # Salvar histórico
-            self._current_match['end_time'] = datetime.utcnow().isoformat()
-            self._matches_history.append(self._current_match)
-            
-            # Restaurar configs
-            for cmd, value in self._backup_config.items():
-                if value:
-                    await self.rcon.execute(f"{cmd} {value}")
-                    
-            self._current_match = None
-            
-            return True
-            
+
         except Exception as e:
             self.logger.logger.error(f"Erro ao finalizar partida: {e}")
             return False
-            
-    async def get_match_status(self) -> Optional[Dict]:
-        """Obter status atual da partida"""
+
+    async def get_server_info(self) -> Optional[Dict]:
+        """Obter informações do servidor"""
         try:
-            if not self._current_match:
+            status = await self.rcon.get_status()
+            if not status:
                 return None
-                
-            # Atualizar placar
-            response = await self.rcon.execute("mp_getstatus")
-            if response:
-                lines = response.split('\n')
-                for line in lines:
-                    if 'Score:' in line:
-                        scores = line.split(':')[1].strip().split('-')
-                        self._current_match['score'] = {
-                            'team1': int(scores[0]),
-                            'team2': int(scores[1])
-                        }
-                        
-            return self._current_match
-            
+
+            return {
+                'ip': self.rcon.host,
+                'port': self.rcon.port,
+                'map': status['map'],
+                'players_online': status['players_online'],
+                'max_players': 4,
+                'status': 'online' if status else 'offline'
+            }
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao obter status: {e}")
+            self.logger.logger.error(f"Erro ao obter info do servidor: {e}")
             return None
+
+    async def change_map(self, map_name: str) -> bool:
+        """Trocar mapa do servidor"""
+        return await self.rcon.change_map(map_name)
+
+    async def kick_player(self, steam_id: str, reason: str = "") -> bool:
+        """Kickar jogador do servidor"""
+        return await self.rcon.kick_player(steam_id, reason)
+
+    async def restart_server(self) -> bool:
+        """Reiniciar servidor"""
+        try:
+            # Limpar partidas ativas
+            self.active_matches.clear()
+            
+            # Reiniciar servidor
+            return await self.rcon.execute("_restart") is not None
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao reiniciar servidor: {e}")
+            return False

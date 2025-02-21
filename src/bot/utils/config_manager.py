@@ -1,124 +1,165 @@
 """
-Configuration Manager for CS2 Server
+Configuration Manager
 Author: adamguedesmtm
-Created: 2025-02-21 13:17:58
+Created: 2025-02-21 13:49:37
 """
 
-from typing import Dict, Any
 import json
+from pathlib import Path
+from typing import Any, Dict, Optional
 import os
+from .logger import Logger
 
 class ConfigManager:
-    def __init__(self, config_path: str = "/opt/cs2server/config.json"):
-        self.config_path = config_path
-        self._config: Dict[str, Any] = self._load_config()
+    def __init__(self):
+        self.logger = Logger('config_manager')
+        self.config_dir = Path('/opt/cs2server/config')
+        self.config_file = self.config_dir / 'config.json'
+        self.defaults = self._get_defaults()
+        self.config = {}
+        self.load_config()
 
-    def _load_config(self) -> Dict[str, Any]:
-        """Carregar configuração do arquivo"""
-        if not os.path.exists(self.config_path):
-            return self._create_default_config()
-            
-        try:
-            with open(self.config_path, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Erro ao carregar config: {e}")
-            return self._create_default_config()
-
-    def _create_default_config(self) -> Dict[str, Any]:
-        """Criar configuração padrão"""
-        default_config = {
+    def _get_defaults(self) -> Dict:
+        """Configurações padrão"""
+        return {
             'servers': {
                 'competitive': {
+                    'host': 'localhost',
                     'port': 27015,
-                    'rcon_password': 'your_rcon_password',
-                    'hostname': 'CS2 Competitive Server',
-                    'maxplayers': 12
+                    'rcon_password': '',
+                    'server_password': '',
+                    'maps': [
+                        'de_dust2', 'de_mirage', 'de_inferno',
+                        'de_overpass', 'de_ancient', 'de_anubis'
+                    ]
                 },
                 'wingman': {
+                    'host': 'localhost',
                     'port': 27016,
-                    'rcon_password': 'your_rcon_password',
-                    'hostname': 'CS2 Wingman Server',
-                    'maxplayers': 4
+                    'rcon_password': '',
+                    'server_password': '',
+                    'maps': [
+                        'de_lake', 'de_shortdust', 'de_overpass',
+                        'de_inferno', 'de_vertigo'
+                    ]
                 },
                 'retake': {
+                    'host': 'localhost',
                     'port': 27017,
-                    'rcon_password': 'your_rcon_password',
-                    'hostname': 'CS2 Retake Server',
-                    'maxplayers': 10
+                    'rcon_password': '',
+                    'server_password': '',
+                    'maps': [
+                        'de_dust2', 'de_mirage', 'de_inferno'
+                    ]
                 }
             },
-            'discord': {
-                'token': 'your_discord_token',
-                'channel_id': 'your_channel_id'
+            'queue': {
+                'competitive': {
+                    'min_players': 10,
+                    'max_players': 10,
+                    'timeout': 300
+                },
+                'wingman': {
+                    'min_players': 4,
+                    'max_players': 4,
+                    'timeout': 180
+                },
+                'retake': {
+                    'min_players': 6,
+                    'max_players': 10,
+                    'timeout': 120
+                }
+            },
+            'matchzy': {
+                'api_key': '',
+                'api_url': 'http://localhost:8080'
             },
             'database': {
                 'host': 'localhost',
                 'port': 5432,
                 'name': 'cs2bot',
                 'user': 'cs2bot',
-                'password': 'your_db_password'
+                'password': ''
+            },
+            'discord': {
+                'prefix': '!',
+                'admin_role': 'Admin',
+                'channels': {
+                    'queue': '',
+                    'matches': '',
+                    'admin': ''
+                }
             }
         }
-        
+
+    def load_config(self):
+        """Carregar configurações do arquivo"""
         try:
-            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-            with open(self.config_path, 'w') as f:
-                json.dump(default_config, f, indent=4)
-        except Exception as e:
-            print(f"Erro ao salvar config: {e}")
+            if not self.config_file.exists():
+                self.config = self.defaults
+                self.save_config()
+                return
+
+            with open(self.config_file, 'r') as f:
+                self.config = json.load(f)
+
+            # Atualizar com valores padrão faltantes
+            self._update_missing_defaults(self.config, self.defaults)
             
-        return default_config
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao carregar config: {e}")
+            self.config = self.defaults
+
+    def _update_missing_defaults(self, config: Dict, defaults: Dict):
+        """Atualizar configurações faltantes com valores padrão"""
+        for key, value in defaults.items():
+            if key not in config:
+                config[key] = value
+            elif isinstance(value, dict) and isinstance(config[key], dict):
+                self._update_missing_defaults(config[key], value)
+
+    def save_config(self):
+        """Salvar configurações no arquivo"""
+        try:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=4)
+                
+            self.logger.logger.info("Configurações salvas com sucesso")
+            
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao salvar config: {e}")
 
     def get(self, key: str, default: Any = None) -> Any:
-        """
-        Obter valor de configuração
-        
-        Args:
-            key: Chave da configuração (usa pontos para níveis)
-            default: Valor padrão se não encontrado
-            
-        Returns:
-            Valor da configuração ou default
-        """
+        """Obter valor de configuração"""
         try:
-            value = self._config
+            value = self.config
             for k in key.split('.'):
                 value = value[k]
             return value
         except (KeyError, TypeError):
             return default
 
-    def set(self, key: str, value: Any) -> bool:
-        """
-        Definir valor de configuração
-        
-        Args:
-            key: Chave da configuração
-            value: Novo valor
-            
-        Returns:
-            True se salvo com sucesso
-        """
+    def set(self, key: str, value: Any):
+        """Definir valor de configuração"""
         try:
             keys = key.split('.')
-            config = self._config
+            target = self.config
             
             # Navegar até o último nível
             for k in keys[:-1]:
-                if k not in config:
-                    config[k] = {}
-                config = config[k]
+                if k not in target:
+                    target[k] = {}
+                target = target[k]
                 
             # Definir valor
-            config[keys[-1]] = value
+            target[keys[-1]] = value
             
-            # Salvar arquivo
-            with open(self.config_path, 'w') as f:
-                json.dump(self._config, f, indent=4)
-                
+            # Salvar alterações
+            self.save_config()
             return True
             
         except Exception as e:
-            print(f"Erro ao definir config: {e}")
+            self.logger.logger.error(f"Erro ao definir config: {e}")
             return False

@@ -1,205 +1,193 @@
 """
-Retake Manager for CS2 Server
+Retake Manager
 Author: adamguedesmtm
-Created: 2025-02-21 13:23:47
+Created: 2025-02-21 13:55:14
 """
 
+import asyncio
 from typing import Dict, List, Optional
-from .rcon_manager import RCONManager
-from .config_manager import ConfigManager
-from .metrics import MetricsManager
 from .logger import Logger
+from .metrics import MetricsManager
+from .rcon_manager import RCONManager
 from .map_manager import MapManager
-from datetime import datetime
 
 class RetakeManager:
     def __init__(self,
-                 rcon_manager: RCONManager,
-                 config_manager: ConfigManager,
-                 metrics_manager: MetricsManager):
-        self.logger = Logger('retake_manager')
-        self.rcon = rcon_manager
-        self.config = config_manager
-        self.metrics = metrics_manager
-        self.map_manager = MapManager()
-        
-        self._current_session: Optional[Dict] = None
-        self._backup_config = {}
-        
-    async def setup_retake_config(self):
-        """Configurar servidor para retakes"""
+                 rcon: RCONManager,
+                 map_manager: MapManager,
+                 logger: Optional[Logger] = None,
+                 metrics: Optional[MetricsManager] = None):
+        self.rcon = rcon
+        self.map_manager = map_manager
+        self.logger = logger or Logger('retake_manager')
+        self.metrics = metrics
+        self.active_sessions: Dict[str, Dict] = {}
+        self.session_counter = 0
+
+    async def setup_server(self, player_count: int) -> Optional[Dict]:
+        """Configurar servidor retake"""
         try:
-            # Backup config atual
-            self._backup_config = {
-                'mp_maxrounds': await self.rcon.execute("mp_maxrounds"),
-                'mp_roundtime': await self.rcon.execute("mp_roundtime")
-            }
-            
-            commands = [
-                "mp_maxrounds 0",            # Infinito
-                "mp_roundtime 1.92",         # 1:55 tempo de round
-                "mp_freezetime 3",           # 3s freezetime
-                "sv_maxplayers 10",          # Max 10 jogadores
-                "mp_warmuptime 30",          # 30s warmup
-                "mp_warmup_pausetimer 0",    # Não pausar timer
-                "mp_autoteambalance 1",      # Auto-balance
-                "mp_limitteams 0",           # Sem limite times
-                "mp_maxmoney 16000",         # Max dinheiro
-                "mp_startmoney 16000",       # Dinheiro inicial
-                "mp_friendlyfire 1",         # Fogo amigo
-                "sv_deadtalk 1",             # Mortos podem falar
-                "mp_randomspawn 1",          # Spawns aleatórios
-                "mp_randomspawn_los 1",      # Line of sight spawns
-                "mp_weapons_allow_zeus 0",   # Sem zeus
-                "mp_ct_default_secondary weapon_usp_silencer", # USP CT
-                "mp_t_default_secondary weapon_glock",         # Glock T
-                "mp_free_armor 2",           # Armor + Helmet grátis
-                "mp_equipment_reset_rounds 1", # Reset equip todo round
-                "sm_retakes_enabled 1",       # Plugin retakes
-                "sm_retakes_maxplayers 10",   # Max jogadores
-                "sm_retakes_ratio_constant 0.4" # 40% T, 60% CT
-            ]
-            
-            for cmd in commands:
-                await self.rcon.execute(cmd)
-                
-            self.logger.logger.info("Configurações retake aplicadas")
-            return True
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao configurar retake: {e}")
-            return False
-            
-    async def start_session(self, map_name: Optional[str] = None) -> bool:
-        """
-        Iniciar sessão de retake
-        
-        Args:
-            map_name: Mapa específico ou None para aleatório
-            
-        Returns:
-            True se iniciada com sucesso
-        """
-        try:
-            # Setup servidor
-            await self.setup_retake_config()
-            
-            # Escolher mapa aleatório se não especificado
+            # Gerar ID único para a sessão
+            self.session_counter += 1
+            session_id = f"rt_{self.session_counter}"
+
+            # Selecionar mapa
+            map_name = await self.map_manager.get_next_map('retake')
             if not map_name:
-                maps = list(self.map_manager._maps.keys())
-                map_name = maps[0]  # Primeiro mapa por padrão
-                
+                raise Exception("Nenhum mapa disponível")
+
+            # Configurar servidor
+            await self.rcon.execute("mp_autoteambalance 1")
+            await self.rcon.execute("mp_limitteams 0")
+            await self.rcon.execute("mp_maxrounds 0")  # Infinito
+            await self.rcon.execute("mp_roundtime 1.92")  # ~2 minutos
+            await self.rcon.execute("mp_freezetime 3")
+            await self.rcon.execute("mp_respawn_on_death_t 1")
+            await self.rcon.execute("mp_respawn_on_death_ct 1")
+            
+            # Configurar proporção CT/T
+            ct_ratio = 0.6  # 60% CT, 40% T
+            max_players = min(player_count, 10)
+            ct_players = int(max_players * ct_ratio)
+            t_players = max_players - ct_players
+            
+            await self.rcon.execute(f"mp_limitteams {max_players}")
+            await self.rcon.execute(f"mp_maxplayers {max_players}")
+            
+            # Gerar senha única
+            session_password = f"rt_{session_id}"
+            await self.rcon.set_password(session_password)
+
+            # Trocar mapa
+            if not await self.rcon.change_map(map_name):
+                raise Exception("Falha ao trocar mapa")
+
             # Registrar sessão
-            session_id = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            self._current_session = {
+            self.active_sessions[session_id] = {
                 'id': session_id,
                 'map': map_name,
-                'players': [],
-                'rounds_played': 0,
-                'status': 'active',
-                'start_time': datetime.utcnow().isoformat()
+                'password': session_password,
+                'max_players': max_players,
+                'ct_players': ct_players,
+                't_players': t_players,
+                'status': 'active'
             }
-            
-            # Carregar mapa
-            await self.rcon.execute(f"map {map_name}")
-            
-            await self.metrics.record_metric(
-                'retake.session_started',
-                1,
-                {'map': map_name}
-            )
-            
-            return True
-            
+
+            if self.metrics:
+                await self.metrics.record_command('retake_session_start')
+
+            return {
+                'ip': self.rcon.host,
+                'port': self.rcon.port,
+                'password': session_password,
+                'map': map_name,
+                'max_players': max_players
+            }
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao iniciar retake: {e}")
-            return False
-            
-    async def end_session(self) -> bool:
-        """Finalizar sessão atual"""
+            self.logger.logger.error(f"Erro ao configurar servidor retake: {e}")
+            return None
+
+    async def get_session_info(self, session_id: str) -> Optional[Dict]:
+        """Obter informações da sessão"""
         try:
-            if not self._current_session:
-                return False
-                
-            # Restaurar configs
-            for cmd, value in self._backup_config.items():
-                if value:
-                    await self.rcon.execute(f"{cmd} {value}")
-                    
-            await self.metrics.record_metric(
-                'retake.session_ended',
-                1,
-                {'session_id': self._current_session['id']}
-            )
-            
-            self._current_session = None
-            return True
-            
+            if session_id not in self.active_sessions:
+                return None
+
+            session = self.active_sessions[session_id]
+            server_info = await self.rcon.get_status()
+
+            return {
+                'id': session['id'],
+                'map': session['map'],
+                'ip': self.rcon.host,
+                'port': self.rcon.port,
+                'password': session['password'],
+                'status': session['status'],
+                'max_players': session['max_players'],
+                'ct_players': session['ct_players'],
+                't_players': session['t_players'],
+                'players_online': server_info['players_online'] if server_info else 0
+            }
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao finalizar retake: {e}")
-            return False
-            
+            self.logger.logger.error(f"Erro ao obter info da sessão: {e}")
+            return None
+
     async def rotate_map(self) -> bool:
-        """Rotacionar para próximo mapa"""
+        """Rotacionar mapa"""
         try:
-            if not self._current_session:
-                return False
-                
-            # Escolher próximo mapa
-            current = self._current_session['map']
-            maps = list(self.map_manager._maps.keys())
-            next_index = (maps.index(current) + 1) % len(maps)
-            next_map = maps[next_index]
-            
-            # Carregar novo mapa
-            await self.rcon.execute(f"map {next_map}")
-            self._current_session['map'] = next_map
-            self._current_session['rounds_played'] = 0
-            
-            await self.metrics.record_metric(
-                'retake.map_rotated',
-                1,
-                {'map': next_map}
+            # Selecionar novo mapa
+            current_map = (await self.rcon.get_status())['map']
+            next_map = await self.map_manager.get_next_map(
+                'retake',
+                exclude=[current_map]
             )
+
+            if not next_map:
+                return False
+
+            # Avisar jogadores
+            await self.rcon.send_message(f"Trocando mapa para {next_map}...")
             
-            return True
+            # Trocar mapa
+            success = await self.rcon.change_map(next_map)
             
+            if success and self.metrics:
+                await self.metrics.record_command('retake_map_rotation')
+                
+            return success
+
         except Exception as e:
             self.logger.logger.error(f"Erro ao rotacionar mapa: {e}")
             return False
-            
-    async def get_session_stats(self) -> Optional[Dict]:
-        """Obter estatísticas da sessão"""
+
+    async def get_server_info(self) -> Optional[Dict]:
+        """Obter informações do servidor"""
         try:
-            if not self._current_session:
+            status = await self.rcon.get_status()
+            if not status:
                 return None
-                
-            # Atualizar info de jogadores
-            status = await self.rcon.execute("status")
-            if status:
-                players = []
-                for line in status.split('\n'):
-                    if 'STEAM' in line:  # Linha de jogador
-                        parts = line.split()
-                        players.append({
-                            'name': ' '.join(parts[2:-6]),
-                            'team': parts[-2],
-                            'connected': parts[-1]
-                        })
-                        
-                self._current_session['players'] = players
-                
-            # Atualizar rounds jogados
-            score = await self.rcon.execute("mp_getstatus")
-            if score:
-                for line in score.split('\n'):
-                    if 'Total Rounds Played' in line:
-                        self._current_session['rounds_played'] = int(
-                            line.split(':')[1].strip()
-                        )
-                        
-            return self._current_session
-            
+
+            return {
+                'ip': self.rcon.host,
+                'port': self.rcon.port,
+                'map': status['map'],
+                'players_online': status['players_online'],
+                'max_players': 10,
+                'status': 'online' if status else 'offline'
+            }
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao obter stats: {e}")
+            self.logger.logger.error(f"Erro ao obter info do servidor: {e}")
             return None
+
+    async def change_map(self, map_name: str) -> bool:
+        """Trocar mapa do servidor"""
+        return await self.rcon.change_map(map_name)
+
+    async def kick_player(self, steam_id: str, reason: str = "") -> bool:
+        """Kickar jogador do servidor"""
+        return await self.rcon.kick_player(steam_id, reason)
+
+    async def restart_server(self) -> bool:
+        """Reiniciar servidor"""
+        try:
+            # Limpar sessões ativas
+            self.active_sessions.clear()
+            
+            # Reiniciar servidor
+            return await self.rcon.execute("_restart") is not None
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao reiniciar servidor: {e}")
+            return False
+
+    async def balance_teams(self) -> bool:
+        """Balancear times automaticamente"""
+        try:
+            return await self.rcon.execute("mp_scrambleteams 1") is not None
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao balancear times: {e}")
+            return False

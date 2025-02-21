@@ -1,138 +1,104 @@
 """
-Metrics Manager for CS2 Server
+Metrics Manager
 Author: adamguedesmtm
-Created: 2025-02-21 13:17:58
+Created: 2025-02-21 13:49:37
 """
 
-from typing import Dict, Any, Optional
-import time
-import json
-import os
-from datetime import datetime
+from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import start_http_server
+from typing import Dict, Optional
+from .logger import Logger
 
 class MetricsManager:
-    def __init__(self, metrics_dir: str = "/var/log/cs2server/metrics"):
-        self.metrics_dir = metrics_dir
-        os.makedirs(metrics_dir, exist_ok=True)
+    def __init__(self, port: int = 9090):
+        self.logger = Logger('metrics')
+        self.port = port
         
-        self._current_file = None
-        self._current_date = None
-        self._metrics_buffer = []
-        self._buffer_size = 100
+        # Métricas do bot
+        self.commands_total = Counter(
+            'bot_commands_total',
+            'Total de comandos executados',
+            ['command']
+        )
         
-    async def record_metric(self,
-                          name: str,
-                          value: float,
-                          labels: Optional[Dict[str, str]] = None):
-        """
-        Registrar métrica
+        self.queue_players = Gauge(
+            'queue_players',
+            'Número de jogadores na fila',
+            ['queue_type']
+        )
         
-        Args:
-            name: Nome da métrica
-            value: Valor
-            labels: Labels adicionais
-        """
-        try:
-            current_date = datetime.utcnow().date()
-            
-            # Rotacionar arquivo se necessário
-            if current_date != self._current_date:
-                await self._rotate_file(current_date)
-            
-            # Criar entrada
-            metric = {
-                'timestamp': datetime.utcnow().isoformat(),
-                'name': name,
-                'value': value,
-                'labels': labels or {}
-            }
-            
-            # Adicionar ao buffer
-            self._metrics_buffer.append(metric)
-            
-            # Flush se buffer cheio
-            if len(self._metrics_buffer) >= self._buffer_size:
-                await self._flush_buffer()
-                
-        except Exception as e:
-            print(f"Erro ao registrar métrica: {e}")
-            
-    async def _rotate_file(self, new_date):
-        """Rotacionar arquivo de métricas"""
-        try:
-            # Flush buffer atual
-            if self._metrics_buffer:
-                await self._flush_buffer()
-                
-            # Fechar arquivo atual
-            if self._current_file:
-                self._current_file.close()
-                
-            # Abrir novo arquivo
-            filename = f"{self.metrics_dir}/metrics_{new_date}.json"
-            self._current_file = open(filename, 'a')
-            self._current_date = new_date
-            
-        except Exception as e:
-            print(f"Erro ao rotacionar métricas: {e}")
-            
-    async def _flush_buffer(self):
-        """Flush do buffer para arquivo"""
-        try:
-            if not self._metrics_buffer:
-                return
-                
-            # Escrever cada métrica
-            for metric in self._metrics_buffer:
-                self._current_file.write(json.dumps(metric) + '\n')
-                
-            self._current_file.flush()
-            self._metrics_buffer.clear()
-            
-        except Exception as e:
-            print(f"Erro ao flush métricas: {e}")
-            
-    async def get_metrics(self,
-                         start_date: datetime,
-                         end_date: datetime,
-                         metric_name: Optional[str] = None) -> list:
-        """
-        Obter métricas em intervalo
+        self.matches_total = Counter(
+            'matches_total',
+            'Total de partidas iniciadas',
+            ['match_type']
+        )
         
-        Args:
-            start_date: Data inicial
-            end_date: Data final
-            metric_name: Filtrar por nome
-            
-        Returns:
-            Lista de métricas
-        """
-        metrics = []
+        self.match_duration = Histogram(
+            'match_duration_seconds',
+            'Duração das partidas',
+            ['match_type']
+        )
+        
+        self.server_status = Gauge(
+            'server_status',
+            'Status do servidor',
+            ['server_type']
+        )
+        
+        self.player_stats = Counter(
+            'player_stats',
+            'Estatísticas dos jogadores',
+            ['stat_type', 'player_id']
+        )
+        
+        # Iniciar servidor de métricas
         try:
-            # Flush buffer atual
-            await self._flush_buffer()
-            
-            # Para cada arquivo no intervalo
-            current = start_date.date()
-            while current <= end_date.date():
-                filename = f"{self.metrics_dir}/metrics_{current}.json"
-                if os.path.exists(filename):
-                    with open(filename, 'r') as f:
-                        for line in f:
-                            metric = json.loads(line)
-                            
-                            # Filtrar por nome se especificado
-                            if metric_name and metric['name'] != metric_name:
-                                continue
-                                
-                            # Filtrar por timestamp
-                            ts = datetime.fromisoformat(metric['timestamp'])
-                            if start_date <= ts <= end_date:
-                                metrics.append(metric)
-                                
-                current = current.next_day()
-                
+            start_http_server(port)
+            self.logger.logger.info(f"Servidor de métricas iniciado na porta {port}")
         except Exception as e:
-            print(f"Erro ao obter métricas: {e}")
-            
-        return metrics
+            self.logger.logger.error(f"Erro ao iniciar servidor de métricas: {e}")
+
+    async def record_command(self, command: str):
+        """Registrar comando executado"""
+        try:
+            self.commands_total.labels(command=command).inc()
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao registrar comando: {e}")
+
+    async def update_queue_count(self, queue_type: str, count: int):
+        """Atualizar contador de jogadores na fila"""
+        try:
+            self.queue_players.labels(queue_type=queue_type).set(count)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao atualizar contagem da fila: {e}")
+
+    async def record_match_start(self, match_type: str):
+        """Registrar início de partida"""
+        try:
+            self.matches_total.labels(match_type=match_type).inc()
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao registrar início de partida: {e}")
+
+    async def record_match_duration(self, match_type: str, duration: float):
+        """Registrar duração de partida"""
+        try:
+            self.match_duration.labels(match_type=match_type).observe(duration)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao registrar duração de partida: {e}")
+
+    async def update_server_status(self, server_type: str, status: int):
+        """Atualizar status do servidor"""
+        try:
+            self.server_status.labels(server_type=server_type).set(status)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao atualizar status do servidor: {e}")
+
+    async def record_player_stat(self, stat_type: str, player_id: str, value: float = 1):
+        """Registrar estatística de jogador"""
+        try:
+            self.player_stats.labels(
+                stat_type=stat_type,
+                player_id=player_id
+            ).inc(value)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao registrar estatística: {e}")
