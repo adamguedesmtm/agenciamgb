@@ -1,7 +1,7 @@
 """
 CS2 Discord Bot Main
 Author: adamguedesmtm
-Created: 2025-02-21 13:27:15
+Created: 2025-02-21 13:37:52
 """
 
 import os
