@@ -1,14 +1,36 @@
-# Core dependencies
+# CS2 Discord Bot Requirements
+# Author: adamguedesmtm
+# Created: 2025-02-21 14:04:54
+
+# Discord
 discord.py>=2.3.0
-aiohttp>=3.9.0
-pillow>=10.0.0
-python-valve>=0.2.1
-asyncio>=3.4.3
-aiofiles>=23.2.1
-python-dotenv>=1.0.0
+discord-ext-menus>=1.0.0
 
 # Database
 asyncpg>=0.28.0
+SQLAlchemy>=2.0.0
 
-# Logging & Metrics
+# RCON
+python-valve>=1.0.0
+asyncio-rcon>=2.1.0
+
+# Image Processing
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Metrics & Monitoring
 prometheus_client>=0.17.0
+statsd>=4.0.0
+
+# HTTP Client
+aiohttp>=3.8.0
+
+# Utilities
+python-dateutil>=2.8.2
+pytz>=2023.3
+colorlog>=6.7.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
