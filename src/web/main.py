@@ -1,12 +1,13 @@
 """
 Web Server - CS2 Stats Display System
 Author: adamguedesmtm
-Created: 2025-02-21 15:10:09
+Created: 2025-02-21 15:15:42
 """
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 from pathlib import Path
 import uvicorn
 from .api import demos

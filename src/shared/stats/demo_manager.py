@@ -1,7 +1,7 @@
 """
 Demo Manager - CS2 Demo Processing System
 Author: adamguedesmtm
-Created: 2025-02-21 15:10:09
+Created: 2025-02-21 15:15:42
 """
 
 import asyncio
@@ -25,11 +25,9 @@ class DemoManager:
             if not demo_file.exists():
                 raise FileNotFoundError(f"Demo não encontrada: {demo_path}")
 
-            # Criar diretório para output
             output_dir = self.demos_dir / demo_file.stem
             output_dir.mkdir(exist_ok=True)
 
-            # Executar CS Demo Manager via comando
             process = await asyncio.create_subprocess_exec(
                 str(self.cs_demo_manager_path),
                 "analyze",
@@ -45,11 +43,9 @@ class DemoManager:
             if process.returncode != 0:
                 raise Exception(f"Erro ao processar demo: {stderr.decode()}")
 
-            # Ler arquivo de análise
             with open(output_dir / "analysis.json") as f:
                 analysis = json.load(f)
 
-            # Converter análise para nosso formato
             return await self._convert_analysis(analysis, demo_path)
 
         except Exception as e:
@@ -59,11 +55,9 @@ class DemoManager:
     async def _convert_analysis(self, analysis: Dict, demo_path: str) -> MatchStats:
         """Converter análise do CS Demo Manager para nosso formato"""
         try:
-            # Extrair dados básicos
             match_date = datetime.fromtimestamp(analysis["matchStartTime"])
             match_type = self._determine_match_type(analysis)
 
-            # Processar rounds
             rounds = []
             for round_data in analysis["rounds"]:
                 round_stats = RoundStats(
@@ -75,7 +69,6 @@ class DemoManager:
                 )
                 rounds.append(round_stats)
 
-            # Processar jogadores
             players = []
             for player_data in analysis["players"]:
                 player_stats = PlayerStats(
@@ -92,7 +85,6 @@ class DemoManager:
                 )
                 players.append(player_stats)
 
-            # Criar estatísticas do mapa
             map_stats = MapStats(
                 map_name=analysis["mapName"],
                 score_ct=analysis["scoreTeams"]["CT"],
@@ -102,7 +94,6 @@ class DemoManager:
                 players=players
             )
 
-            # Criar estatísticas da partida
             match_stats = MatchStats(
                 match_id=analysis["matchId"],
                 date=match_date,

@@ -1,1 +1,5 @@
-# Arquivo vazio para marcar o diretório como um pacote Python
+"""
+Models Package - CS2 Stats Data Models
+Author: adamguedesmtm
+Created: 2025-02-21 15:12:57
+"""

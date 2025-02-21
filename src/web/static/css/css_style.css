@@ -1,0 +1,10 @@
+/* Base styles for CS2 Stats */
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+.stats-card {
+    transition: transform 0.2s;
+}
+
+.stats-card:hover {
