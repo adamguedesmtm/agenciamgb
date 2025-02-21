@@ -1,10 +1,10 @@
 """
 Player Card Generator
 Author: adamguedesmtm
-Created: 2025-02-21 13:56:20
+Created: 2025-02-21 15:46:19
 """
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from typing import Dict, List, Optional, Tuple
 import aiohttp
 import io
@@ -23,7 +23,6 @@ class PlayerCard:
         self.metrics = metrics
         self.fonts = self._load_fonts()
         self.rank_images = self._load_rank_images()
-        self.template = self._load_template()
 
     def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
         """Carregar fontes necessárias"""
@@ -32,7 +31,8 @@ class PlayerCard:
             return {
                 'title': ImageFont.truetype(str(fonts_dir / 'title.ttf'), 48),
                 'stats': ImageFont.truetype(str(fonts_dir / 'stats.ttf'), 32),
-                'details': ImageFont.truetype(str(fonts_dir / 'details.ttf'), 24)
+                'details': ImageFont.truetype(str(fonts_dir / 'details.ttf'), 24),
+                'elo': ImageFont.truetype(str(fonts_dir / 'elo.ttf'), 64)  # Nova fonte para ELO
             }
         except Exception as e:
             self.logger.logger.error(f"Erro ao carregar fontes: {e}")
@@ -50,47 +50,66 @@ class PlayerCard:
             self.logger.logger.error(f"Erro ao carregar ranks: {e}")
             return {}
 
-    def _load_template(self) -> Optional[Image.Image]:
-        """Carregar template do card"""
+    async def get_steam_profile_background(self, steam_id: str) -> Optional[Image.Image]:
+        """Buscar imagem de fundo do perfil Steam"""
         try:
-            template_path = self.assets_dir / 'templates' / 'player_card.png'
-            return Image.open(template_path)
+            async with aiohttp.ClientSession() as session:
+                # Primeiro, buscar o perfil Steam para obter a URL da imagem
+                profile_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={os.getenv('STEAM_API_KEY')}&steamids={steam_id}"
+                async with session.get(profile_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if players := data.get('response', {}).get('players', []):
+                            player = players[0]
+                            # Tentar pegar a imagem de perfil em alta resolução
+                            bg_url = player.get('profilebackground', '')
+                            if bg_url:
+                                async with session.get(bg_url) as img_response:
+                                    if img_response.status == 200:
+                                        img_data = await img_response.read()
+                                        return Image.open(io.BytesIO(img_data))
         except Exception as e:
-            self.logger.logger.error(f"Erro ao carregar template: {e}")
-            return None
+            self.logger.logger.error(f"Erro ao buscar fundo do Steam: {e}")
+        return None
 
-    async def get_player_stats(self, player_id: int) -> Dict:
-        """Obter estatísticas do jogador"""
-        # Simulação de estatísticas (substituir por integração real)
-        return {
-            'rank': 'gold_nova_master',
-            'matches': 150,
-            'wins': 89,
-            'losses': 61,
-            'draws': 0,
-            'winrate': 59.3,
-            'rating': 1.15,
-            'kd_ratio': 1.23,
-            'headshot_percent': 48.7,
-            'accuracy': 22.4,
-            'most_played_maps': [
-                ('de_mirage', 45),
-                ('de_inferno', 38),
-                ('de_dust2', 34)
-            ]
-        }
+    def create_background(self, width: int, height: int, steam_bg: Optional[Image.Image] = None) -> Image.Image:
+        """Criar fundo do card"""
+        if steam_bg:
+            # Redimensionar e aplicar blur na imagem do Steam
+            bg = steam_bg.resize((width, height), Image.Resampling.LANCZOS)
+            bg = bg.filter(ImageFilter.GaussianBlur(radius=5))
+            
+            # Adicionar overlay escuro para melhor legibilidade
+            overlay = Image.new('RGBA', (width, height), (0, 0, 0, 128))
+            bg = Image.alpha_composite(bg.convert('RGBA'), overlay)
+        else:
+            # Criar gradiente como fallback
+            bg = Image.new('RGBA', (width, height), (32, 32, 32, 255))
+            gradient = Image.new('RGBA', (width, height))
+            draw = ImageDraw.Draw(gradient)
+            for y in range(height):
+                alpha = int(255 * (1 - y/height))
+                draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
+            bg = Image.alpha_composite(bg, gradient)
+        
+        return bg
 
-    async def generate(self, player_id: int, player_name: str, avatar_url: Optional[str] = None) -> Optional[io.BytesIO]:
+    async def generate(self, player_id: int, player_name: str, steam_id: str, avatar_url: Optional[str] = None) -> Optional[io.BytesIO]:
         """Gerar card do jogador"""
         try:
             # Obter estatísticas
             stats = await self.get_player_stats(player_id)
             
-            if not self.template:
-                raise Exception("Template não carregado")
-
+            # Dimensões do card
+            width, height = 800, 600
+            
+            # Obter fundo do Steam
+            steam_bg = await self.get_steam_profile_background(steam_id)
+            background = self.create_background(width, height, steam_bg)
+            
             # Criar nova imagem
-            card = self.template.copy()
+            card = Image.new('RGBA', (width, height))
+            card.paste(background, (0, 0))
             draw = ImageDraw.Draw(card)
 
             # Adicionar avatar se disponível
@@ -102,35 +121,72 @@ class PlayerCard:
                                 avatar_data = await response.read()
                                 avatar = Image.open(io.BytesIO(avatar_data))
                                 avatar = avatar.resize((128, 128))
-                                card.paste(avatar, (50, 50))
+                                
+                                # Criar máscara circular
+                                mask = Image.new('L', (128, 128), 0)
+                                mask_draw = ImageDraw.Draw(mask)
+                                mask_draw.ellipse((0, 0, 128, 128), fill=255)
+                                
+                                # Aplicar máscara
+                                output = Image.new('RGBA', (128, 128), (0, 0, 0, 0))
+                                output.paste(avatar, (0, 0))
+                                output.putalpha(mask)
+                                
+                                card.paste(output, (50, 50), output)
                 except Exception as e:
                     self.logger.logger.error(f"Erro ao carregar avatar: {e}")
 
-            # Adicionar nome e rank
-            draw.text((200, 50), player_name, font=self.fonts['title'])
-            rank_img = self.rank_images.get(stats['rank'])
-            if rank_img:
-                card.paste(rank_img, (200, 120), rank_img)
+            # Adicionar nome e ELO
+            draw.text((200, 50), player_name, font=self.fonts['title'], fill=(255, 255, 255))
+            
+            # Destacar o ELO
+            elo_text = f"{int(stats['rating'])}"
+            elo_w, elo_h = draw.textsize(elo_text, font=self.fonts['elo'])
+            elo_x = width - elo_w - 50
+            elo_y = 50
+            
+            # Adicionar glow ao ELO
+            for offset in range(3, 0, -1):
+                draw.text(
+                    (elo_x-offset, elo_y-offset), 
+                    elo_text, 
+                    font=self.fonts['elo'], 
+                    fill=(255, 215, 0, 64)
+                )
+            draw.text(
+                (elo_x, elo_y), 
+                elo_text, 
+                font=self.fonts['elo'], 
+                fill=(255, 215, 0)
+            )
 
             # Adicionar estatísticas principais
             stats_y = 250
-            draw.text((50, stats_y), f"Partidas: {stats['matches']}", font=self.fonts['stats'])
-            draw.text((50, stats_y + 40), f"Vitórias: {stats['wins']}", font=self.fonts['stats'])
-            draw.text((50, stats_y + 80), f"Winrate: {stats['winrate']}%", font=self.fonts['stats'])
+            stats_color = (255, 255, 255)
+            draw.text((50, stats_y), f"Partidas: {stats['matches']}", font=self.fonts['stats'], fill=stats_color)
+            draw.text((50, stats_y + 40), f"Vitórias: {stats['wins']}", font=self.fonts['stats'], fill=stats_color)
+            draw.text((50, stats_y + 80), f"Winrate: {stats['winrate']}%", font=self.fonts['stats'], fill=stats_color)
             
-            draw.text((300, stats_y), f"Rating: {stats['rating']}", font=self.fonts['stats'])
-            draw.text((300, stats_y + 40), f"K/D: {stats['kd_ratio']}", font=self.fonts['stats'])
-            draw.text((300, stats_y + 80), f"HS%: {stats['headshot_percent']}%", font=self.fonts['stats'])
+            draw.text((300, stats_y), f"Rating: {stats['rating']:.2f}", font=self.fonts['stats'], fill=stats_color)
+            draw.text((300, stats_y + 40), f"K/D: {stats['kd_ratio']}", font=self.fonts['stats'], fill=stats_color)
+            draw.text((300, stats_y + 80), f"HS%: {stats['headshot_percent']}%", font=self.fonts['stats'], fill=stats_color)
 
             # Adicionar mapas mais jogados
             maps_y = 400
-            draw.text((50, maps_y), "Mapas mais jogados:", font=self.fonts['stats'])
+            draw.text((50, maps_y), "Mapas mais jogados:", font=self.fonts['stats'], fill=stats_color)
             for i, (map_name, count) in enumerate(stats['most_played_maps']):
                 draw.text(
                     (50, maps_y + 40 + (i * 30)),
                     f"{map_name}: {count} partidas",
-                    font=self.fonts['details']
+                    font=self.fonts['details'],
+                    fill=stats_color
                 )
+
+            # Adicionar ranks (medalhas)
+            if rank_img := self.rank_images.get(stats['rank']):
+                rank_size = (64, 64)
+                rank_img = rank_img.resize(rank_size)
+                card.paste(rank_img, (width - rank_size[0] - 50, height - rank_size[1] - 50), rank_img)
 
             # Salvar imagem
             output = io.BytesIO()
@@ -146,33 +202,4 @@ class PlayerCard:
             self.logger.logger.error(f"Erro ao gerar player card: {e}")
             return None
 
-    async def get_top_players(self, limit: int = 10) -> List[Dict]:
-        """Obter top jogadores"""
-        # Simulação (substituir por integração real)
-        return [
-            {
-                'name': f'Player{i}',
-                'rating': round(2.0 - (i * 0.1), 2),
-                'kd': round(1.5 - (i * 0.05), 2),
-                'hs_percent': 50 - i
-            }
-            for i in range(limit)
-        ]
-
-    async def get_recent_matches(self, player_id: int, limit: int = 5) -> List[Dict]:
-        """Obter partidas recentes do jogador"""
-        # Simulação (substituir por integração real)
-        maps = ['de_dust2', 'de_mirage', 'de_inferno', 'de_overpass', 'de_ancient']
-        return [
-            {
-                'map': maps[i % len(maps)],
-                'won': i % 2 == 0,
-                'team_score': 16 if i % 2 == 0 else 13,
-                'enemy_score': 13 if i % 2 == 0 else 16,
-                'kills': 20 + i,
-                'deaths': 15 + i,
-                'assists': 5 + i,
-                'rating': round(1.2 - (i * 0.1), 2)
-            }
-            for i in range(limit)
-        ]
+    # ... (resto dos métodos permanece igual)
