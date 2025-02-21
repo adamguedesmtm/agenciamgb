@@ -145,4 +145,135 @@ class ServiceManager:
         try:
             await self.stop_service(name)
             await asyncio.sleep(1)  # Pequeno delay entre stop e start
-            return await self.
+            return await self.start_service(name)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao reiniciar serviço: {e}")
+            return False
+
+    async def start_all(self) -> Dict[str, bool]:
+        """Iniciar todos os serviços na ordem correta"""
+        try:
+            results = {}
+            for name in self._startup_order:
+                results[name] = await self.start_service(name)
+            return results
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao iniciar todos os serviços: {e}")
+            return {}
+
+    async def stop_all(self) -> Dict[str, bool]:
+        """Parar todos os serviços na ordem reversa"""
+        try:
+            results = {}
+            for name in reversed(self._startup_order):
+                results[name] = await self.stop_service(name)
+            return results
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao parar todos os serviços: {e}")
+            return {}
+
+    def _update_startup_order(self):
+        """Atualizar ordem de inicialização baseado em dependências"""
+        try:
+            # Algoritmo de ordenação topológica
+            visited = set()
+            temp = set()
+            order = []
+
+            def visit(name):
+                if name in temp:
+                    raise ValueError(f"Dependência cíclica detectada: {name}")
+                if name not in visited:
+                    temp.add(name)
+                    for dep in self._dependencies.get(name, []):
+                        visit(dep)
+                    temp.remove(name)
+                    visited.add(name)
+                    order.append(name)
+
+            for name in self._services:
+                if name not in visited:
+                    visit(name)
+
+            self._startup_order = order
+            
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao atualizar ordem de inicialização: {e}")
+            raise
+
+    async def get_service_status(self, name: str) -> Optional[Dict]:
+        """Obter status do serviço"""
+        try:
+            if name not in self._services:
+                return None
+
+            service = self._services[name]
+            return {
+                'name': name,
+                'running': service.running,
+                'start_time': service.start_time,
+                'stop_time': service.stop_time,
+                'uptime': (datetime.now() - service.start_time).total_seconds() if service.running else 0,
+                'error': service.error,
+                'retries': service.retries,
+                'dependencies': self._dependencies.get(name, [])
+            }
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao obter status do serviço: {e}")
+            return None
+
+    async def get_all_status(self) -> Dict[str, Dict]:
+        """Obter status de todos os serviços"""
+        try:
+            return {
+                name: await self.get_service_status(name)
+                for name in self._services
+            }
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao obter status de todos os serviços: {e}")
+            return {}
+
+    def get_startup_order(self) -> List[str]:
+        """Obter ordem de inicialização dos serviços"""
+        return self._startup_order.copy()
+
+    async def add_dependency(self, service: str, depends_on: str):
+        """Adicionar dependência entre serviços"""
+        try:
+            if service not in self._services:
+                raise ValueError(f"Serviço {service} não encontrado")
+            if depends_on not in self._services:
+                raise ValueError(f"Serviço dependente {depends_on} não encontrado")
+
+            if service not in self._dependencies:
+                self._dependencies[service] = []
+            
+            if depends_on not in self._dependencies[service]:
+                self._dependencies[service].append(depends_on)
+                
+            # Atualizar ordem de inicialização
+            self._update_startup_order()
+            
+            self.logger.logger.info(
+                f"Dependência adicionada: {service} -> {depends_on}"
+            )
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao adicionar dependência: {e}")
+            raise
+
+    async def remove_dependency(self, service: str, depends_on: str):
+        """Remover dependência entre serviços"""
+        try:
+            if service in self._dependencies:
+                self._dependencies[service].remove(depends_on)
+                if not self._dependencies[service]:
+                    del self._dependencies[service]
+                    
+                # Atualizar ordem de inicialização
+                self._update_startup_order()
+                
+                self.logger.logger.info(
+                    f"Dependência removida: {service} -> {depends_on}"
+                )
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao remover dependência: {e}")
