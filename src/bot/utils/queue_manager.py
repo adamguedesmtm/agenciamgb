@@ -1,224 +1,354 @@
 """
 Queue Manager for CS2 Server
 Author: adamguedesmtm
-Created: 2025-02-21 05:12:27
+Created: 2025-02-21 07:20:25
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
+import uuid
+from collections import deque
 from .logger import Logger
+from .metrics import MetricsManager
+
+class QueueItem:
+    def __init__(self, data: Any, priority: int = 0):
+        self.id = str(uuid.uuid4())
+        self.data = data
+        self.priority = priority
+        self.created_at = datetime.utcnow()
+        self.processed_at = None
+        self.error = None
+        self.retries = 0
+
+class Queue:
+    def __init__(self, name: str, max_size: int = None):
+        self.name = name
+        self.max_size = max_size
+        self.items = deque()
+        self.processing = set()
+        self.created_at = datetime.utcnow()
+        self.total_processed = 0
+        self.total_errors = 0
 
 class QueueManager:
-    def __init__(self, max_size: int = 1000):
+    def __init__(self, metrics_manager: MetricsManager):
         self.logger = Logger('queue_manager')
-        self.max_size = max_size
-        self._queues: Dict[str, List[Dict]] = {}
-        self._subscribers: Dict[str, List[Callable]] = {}
-        self._processing: Dict[str, bool] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self.metrics = metrics_manager
+        self._queues: Dict[str, Queue] = {}
+        self._handlers: Dict[str, Callable] = {}
+        self._default_handler: Optional[Callable] = None
+        self._running = False
+        self._processing_tasks: Dict[str, asyncio.Task] = {}
 
-    async def create_queue(self, queue_name: str, max_size: int = None):
+    async def create_queue(self, 
+                         name: str,
+                         max_size: int = None,
+                         handler: Callable = None) -> bool:
         """Criar nova fila"""
         try:
-            if queue_name in self._queues:
-                raise ValueError(f"Fila {queue_name} já existe")
+            if name in self._queues:
+                return False
 
-            self._queues[queue_name] = []
-            self._subscribers[queue_name] = []
-            self._processing[queue_name] = False
-            self._locks[queue_name] = asyncio.Lock()
+            queue = Queue(name, max_size)
+            self._queues[name] = queue
             
-            if max_size:
-                self.max_size = max_size
-
-            self.logger.logger.info(f"Fila {queue_name} criada")
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao criar fila: {e}")
-
-    async def delete_queue(self, queue_name: str):
-        """Deletar fila"""
-        try:
-            if queue_name in self._queues:
-                del self._queues[queue_name]
-                del self._subscribers[queue_name]
-                del self._processing[queue_name]
-                del self._locks[queue_name]
+            if handler:
+                self._handlers[name] = handler
                 
-                self.logger.logger.info(f"Fila {queue_name} deletada")
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao deletar fila: {e}")
-
-    async def enqueue(self, queue_name: str, item: Any, priority: int = 0):
-        """
-        Adicionar item à fila
-        priority: 0 (baixa) a 10 (alta)
-        """
-        try:
-            if queue_name not in self._queues:
-                raise ValueError(f"Fila {queue_name} não existe")
-
-            if len(self._queues[queue_name]) >= self.max_size:
-                raise ValueError(f"Fila {queue_name} está cheia")
-
-            queue_item = {
-                'item': item,
-                'priority': priority,
-                'timestamp': datetime.now()
-            }
-
-            async with self._locks[queue_name]:
-                # Inserir mantendo ordem de prioridade
-                queue = self._queues[queue_name]
-                index = 0
-                for i, existing in enumerate(queue):
-                    if existing['priority'] < priority:
-                        index = i
-                        break
-                    elif existing['priority'] == priority:
-                        index = i + 1
-                queue.insert(index, queue_item)
-
-            # Notificar subscribers
-            await self._notify_subscribers(queue_name, 'enqueue', queue_item)
-            
-            self.logger.logger.info(
-                f"Item adicionado à fila {queue_name} com prioridade {priority}"
-            )
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao adicionar à fila: {e}")
-
-    async def dequeue(self, queue_name: str) -> Optional[Any]:
-        """Remover e retornar próximo item da fila"""
-        try:
-            if queue_name not in self._queues:
-                raise ValueError(f"Fila {queue_name} não existe")
-
-            async with self._locks[queue_name]:
-                if not self._queues[queue_name]:
-                    return None
-
-                item = self._queues[queue_name].pop(0)
-                
-                # Notificar subscribers
-                await self._notify_subscribers(queue_name, 'dequeue', item)
-                
-                return item['item']
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao remover da fila: {e}")
-            return None
-
-    async def peek(self, queue_name: str) -> Optional[Any]:
-        """Visualizar próximo item sem remover"""
-        try:
-            if queue_name not in self._queues:
-                raise ValueError(f"Fila {queue_name} não existe")
-
-            if not self._queues[queue_name]:
-                return None
-
-            return self._queues[queue_name][0]['item']
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao visualizar fila: {e}")
-            return None
-
-    async def subscribe(self, queue_name: str, callback: Callable):
-        """Subscrever a eventos da fila"""
-        try:
-            if queue_name not in self._queues:
-                raise ValueError(f"Fila {queue_name} não existe")
-
-            if callback not in self._subscribers[queue_name]:
-                self._subscribers[queue_name].append(callback)
-                
-            self.logger.logger.info(
-                f"Novo subscriber adicionado à fila {queue_name}"
-            )
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao subscrever: {e}")
-
-    async def unsubscribe(self, queue_name: str, callback: Callable):
-        """Cancelar subscrição"""
-        try:
-            if queue_name in self._subscribers:
-                self._subscribers[queue_name].remove(callback)
-                self.logger.logger.info(
-                    f"Subscriber removido da fila {queue_name}"
-                )
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao cancelar subscrição: {e}")
-
-    async def _notify_subscribers(self, queue_name: str, event: str, data: Any):
-        """Notificar subscribers sobre eventos"""
-        try:
-            if queue_name in self._subscribers:
-                for callback in self._subscribers[queue_name]:
-                    try:
-                        await callback(event, data)
-                    except Exception as e:
-                        self.logger.logger.error(
-                            f"Erro ao notificar subscriber: {e}"
-                        )
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao notificar subscribers: {e}")
-
-    async def clear(self, queue_name: str):
-        """Limpar fila"""
-        try:
-            if queue_name in self._queues:
-                async with self._locks[queue_name]:
-                    self._queues[queue_name].clear()
-                await self._notify_subscribers(queue_name, 'clear', None)
-                
-                self.logger.logger.info(f"Fila {queue_name} limpa")
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao limpar fila: {e}")
-
-    async def size(self, queue_name: str) -> int:
-        """Obter tamanho da fila"""
-        try:
-            return len(self._queues.get(queue_name, []))
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao obter tamanho da fila: {e}")
-            return 0
-
-    async def is_empty(self, queue_name: str) -> bool:
-        """Verificar se fila está vazia"""
-        try:
-            return len(self._queues.get(queue_name, [])) == 0
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao verificar fila: {e}")
+            self.logger.logger.info(f"Fila {name} criada")
             return True
 
-    async def get_stats(self, queue_name: str) -> Dict:
-        """Obter estatísticas da fila"""
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao criar fila: {e}")
+            return False
+
+    async def enqueue(self,
+                     queue_name: str,
+                     data: Any,
+                     priority: int = 0) -> Optional[str]:
+        """Adicionar item à fila"""
         try:
             if queue_name not in self._queues:
-                return {}
+                raise ValueError(f"Fila {queue_name} não existe")
+
+            queue = self._queues[queue_name]
+            
+            # Verificar limite
+            if (queue.max_size and 
+                len(queue.items) >= queue.max_size):
+                raise ValueError(f"Fila {queue_name} está cheia")
+                
+            item = QueueItem(data, priority)
+            
+            # Inserir mantendo ordenação por prioridade
+            for i, existing in enumerate(queue.items):
+                if item.priority > existing.priority:
+                    queue.items.insert(i, item)
+                    break
+            else:
+                queue.items.append(item)
+                
+            # Registrar métrica
+            await self.metrics.record_metric(
+                f"queue.{queue_name}.enqueued",
+                1
+            )
+            
+            # Iniciar processamento se necessário
+            if self._running:
+                self._ensure_processing(queue_name)
+                
+            return item.id
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao enfileirar: {e}")
+            return None
+
+    def _ensure_processing(self, queue_name: str):
+        """Garantir que fila está sendo processada"""
+        if (queue_name not in self._processing_tasks or
+            self._processing_tasks[queue_name].done()):
+            task = asyncio.create_task(
+                self._process_queue(queue_name)
+            )
+            self._processing_tasks[queue_name] = task
+
+    async def _process_queue(self, queue_name: str):
+        """Processar itens da fila"""
+        try:
+            queue = self._queues[queue_name]
+            handler = self._handlers.get(
+                queue_name,
+                self._default_handler
+            )
+            
+            if not handler:
+                raise ValueError(
+                    f"Nenhum handler definido para fila {queue_name}"
+                )
+            
+            while self._running:
+                if not queue.items:
+                    await asyncio.sleep(1)
+                    continue
+                    
+                item = queue.items[0]
+                
+                try:
+                    # Processar item
+                    queue.processing.add(item.id)
+                    result = handler(item.data)
+                    if asyncio.iscoroutine(result):
+                        await result
+                        
+                    # Remover item processado
+                    queue.items.popleft()
+                    queue.processing.remove(item.id)
+                    queue.total_processed += 1
+                    
+                    # Registrar métricas
+                    await self.metrics.record_metric(
+                        f"queue.{queue_name}.processed",
+                        1
+                    )
+                    
+                except Exception as e:
+                    queue.total_errors += 1
+                    item.error = str(e)
+                    item.retries += 1
+                    
+                    # Mover para o final da fila
+                    queue.items.popleft()
+                    queue.items.append(item)
+                    
+                    # Registrar métricas
+                    await self.metrics.record_metric(
+                        f"queue.{queue_name}.errors",
+                        1
+                    )
+                    
+                    self.logger.logger.error(
+                        f"Erro ao processar item {item.id}: {e}"
+                    )
+                    
+                finally:
+                    if item.id in queue.processing:
+                        queue.processing.remove(item.id)
+
+        except Exception as e:
+            self.logger.logger.error(
+                f"Erro no processamento da fila {queue_name}: {e}"
+            )
+
+    async def set_handler(self,
+                         queue_name: str,
+                         handler: Callable) -> bool:
+        """Definir handler para fila"""
+        try:
+            if queue_name not in self._queues:
+                return False
+
+            self._handlers[queue_name] = handler
+            return True
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao definir handler: {e}")
+            return False
+
+    def set_default_handler(self, handler: Callable):
+        """Definir handler padrão"""
+        try:
+            self._default_handler = handler
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao definir handler padrão: {e}")
+
+    async def get_queue_info(self, queue_name: str) -> Optional[Dict]:
+        """Obter informações da fila"""
+        try:
+            if queue_name not in self._queues:
+                return None
 
             queue = self._queues[queue_name]
             return {
-                'size': len(queue),
-                'empty': len(queue) == 0,
-                'max_size': self.max_size,
-                'subscribers': len(self._subscribers[queue_name]),
-                'processing': self._processing[queue_name],
-                'priority_distribution': self._get_priority_distribution(queue)
+                'name': queue.name,
+                'size': len(queue.items),
+                'max_size': queue.max_size,
+                'processing': len(queue.processing),
+                'total_processed': queue.total_processed,
+                'total_errors': queue.total_errors,
+                'created_at': queue.created_at.isoformat(),
+                'has_handler': (
+                    queue_name in self._handlers or
+                    self._default_handler is not None
+                )
             }
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao obter estatísticas: {e}")
-            return {}
 
-    def _get_priority_distribution(self, queue: List[Dict]) -> Dict[int, int]:
-        """Obter distribuição de prioridades"""
-        try:
-            distribution = {}
-            for item in queue:
-                priority = item['priority']
-                distribution[priority] = distribution.get(priority, 0) + 1
-            return distribution
         except Exception as e:
-            self.logger.logger.error(
-                f"Erro ao obter distribuição de prioridades: {e}"
-            )
-            return {}
+            self.logger.logger.error(f"Erro ao obter info da fila: {e}")
+            return None
+
+    async def list_queues(self) -> List[Dict]:
+        """Listar todas as filas"""
+        try:
+            return [
+                await self.get_queue_info(name)
+                for name in self._queues
+            ]
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao listar filas: {e}")
+            return []
+
+    async def remove_queue(self, queue_name: str) -> bool:
+        """Remover fila"""
+        try:
+            if queue_name not in self._queues:
+                return False
+
+            # Cancelar processamento
+            if queue_name in self._processing_tasks:
+                self._processing_tasks[queue_name].cancel()
+                try:
+                    await self._processing_tasks[queue_name]
+                except asyncio.CancelledError:
+                    pass
+                del self._processing_tasks[queue_name]
+                
+            # Remover handlers
+            if queue_name in self._handlers:
+                del self._handlers[queue_name]
+                
+            del self._queues[queue_name]
+            
+            self.logger.logger.info(f"Fila {queue_name} removida")
+            return True
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao remover fila: {e}")
+            return False
+
+    async def start(self):
+        """Iniciar processamento das filas"""
+        try:
+            self._running = True
+            
+            # Iniciar processamento de todas as filas
+            for queue_name in self._queues:
+                self._ensure_processing(queue_name)
+                
+            self.logger.logger.info("Processamento iniciado")
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao iniciar processamento: {e}")
+
+    async def stop(self):
+        """Parar processamento das filas"""
+        try:
+            self._running = False
+            
+            # Cancelar todas as tasks
+            for task in self._processing_tasks.values():
+                task.cancel()
+                
+            # Aguardar cancelamento
+            if self._processing_tasks:
+                await asyncio.gather(
+                    *self._processing_tasks.values(),
+                    return_exceptions=True
+                )
+                
+            self._processing_tasks.clear()
+            self.logger.logger.info("Processamento parado")
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao parar processamento: {e}")
+
+    async def clear_queue(self, queue_name: str) -> int:
+        """Limpar fila"""
+        try:
+            if queue_name not in self._queues:
+                return 0
+
+            queue = self._queues[queue_name]
+            count = len(queue.items)
+            queue.items.clear()
+            
+            self.logger.logger.info(f"Fila {queue_name} limpa")
+            return count
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao limpar fila: {e}")
+            return 0
+
+    async def get_item(self,
+                      queue_name: str,
+                      item_id: str) -> Optional[Dict]:
+        """Obter informações do item"""
+        try:
+            if queue_name not in self._queues:
+                return None
+
+            queue = self._queues[queue_name]
+            
+            # Procurar item
+            for item in queue.items:
+                if item.id == item_id:
+                    return {
+                        'id': item.id,
+                        'priority': item.priority,
+                        'created_at': item.created_at.isoformat(),
+                        'processed_at': (
+                            item.processed_at.isoformat()
+                            if item.processed_at else None
+                        ),
+                        'error': item.error,
+                        'retries': item.retries,
+                        'processing': item.id in queue.processing
+                    }
+                    
+            return None
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao obter item: {e}")
+            return None
