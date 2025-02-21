@@ -1,0 +1,25 @@
+[Unit]
+Description=Matchzy CS2 Match Service
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=cs2server
+WorkingDirectory=/opt/cs2server/matchzy
+ExecStart=/opt/cs2server/matchzy/matchzy
+Restart=always
+RestartSec=5
+
+# Limites de recursos
+CPUQuota=30%
+MemoryLimit=1G
+
+# Variáveis de ambiente
+Environment=DB_HOST=localhost
+Environment=DB_PORT=5432
+Environment=DB_NAME=cs2_matchmaking
+Environment=RCON_PASSWORD=your_rcon_password
+
+[Install]
+WantedBy=multi-user.target

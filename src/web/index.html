@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS2 Server Status</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .online { background: #4CAF50; }
+        .offline { background: #f44336; }
+        .warning { background: #ff9800; }
+        h1 { color: #333; }
+        h2 { color: #666; }
+        .refresh-time {
+            color: #666;
+            font-size: 0.8em;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card" id="serverStatus">
+            Carregando...
+        </div>
+    </div>
+    <script>
+        function updateStatus() {
+            fetch('/status.php')
+                .then(response => response.json())
+                .then(data => {
+                    const html = `
+                        <h1>CS2 Server Status</h1>
+                        <p>
+                            <span class="status ${data.server.online ? 'online' : 'offline'}"></span>
+                            Server: ${data.server.online ? 'Online' : 'Offline'}
+                        </p>
+                        <p>IP: ${data.server.ip}</p>
+                        <h2>Serviços:</h2>
+                        <p>CS2: ${data.services.cs2 ? '✅' : '❌'}</p>
+                        <p>Matchzy: ${data.services.matchzy ? '✅' : '❌'}</p>
+                        <p>Bot: ${data.services.bot ? '✅' : '❌'}</p>
+                        <h2>Sistema:</h2>
+                        <p>CPU: ${data.system.cpu}</p>
+                        <p>Memória: ${data.system.memory}</p>
+                        <p>Disco: ${data.system.disk}</p>
+                        <p class="refresh-time">Última atualização: ${data.server.last_update}</p>
+                    `;
+                    document.getElementById('serverStatus').innerHTML = html;
+                });
+        }
+        setInterval(updateStatus, 30000);
+        updateStatus();
+    </script>
+</body>
+</html>
