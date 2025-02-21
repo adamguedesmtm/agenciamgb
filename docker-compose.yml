@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    restart: always
+    volumes:
+      - ./logs:/var/log/cs2server
+      - ./assets:/opt/cs2server/assets
+    environment:
+      - TZ=UTC
+    networks:
+      - cs2bot-network
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: cs2bot
+      POSTGRES_USER: cs2bot
+      POSTGRES_PASSWORD: your_db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cs2bot-network
+
+networks:
+  cs2bot-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
