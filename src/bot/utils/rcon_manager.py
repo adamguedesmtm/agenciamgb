@@ -1,190 +1,98 @@
 """
-RCON Manager
+RCON Manager for CS2 Server Communication
 Author: adamguedesmtm
-Created: 2025-02-21 13:51:45
+Created: 2025-02-21 14:39:11
 """
 
-import asyncio
 import valve.rcon
-from typing import Optional, Dict, List
+from typing import Optional
+import asyncio
 from .logger import Logger
-from .metrics import MetricsManager
 
-class RCONManager:
+class RconManager:
     def __init__(self, 
-                 host: str, 
-                 port: int, 
-                 password: str,
-                 logger: Optional[Logger] = None,
-                 metrics: Optional[MetricsManager] = None):
+                 host: str = 'localhost', 
+                 port: int = 27015,
+                 password: str = None,
+                 logger: Optional[Logger] = None):
         self.host = host
         self.port = port
         self.password = password
-        self.logger = logger or Logger('rcon_manager')
-        self.metrics = metrics
-        self._connection = None
+        self.logger = logger or Logger('rcon')
+        self._rcon = None
         self._lock = asyncio.Lock()
-        
-    async def connect(self) -> bool:
-        """Conectar ao servidor via RCON"""
-        try:
-            async with self._lock:
-                if self._connection:
-                    return True
-                
-                self._connection = valve.rcon.RCON(
-                    (self.host, self.port),
-                    self.password
-                )
-                self._connection.connect()
-                
-                if self.metrics:
-                    await self.metrics.record_command('rcon_connect')
-                
-                self.logger.logger.info(f"RCON conectado a {self.host}:{self.port}")
-                return True
-                
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao conectar RCON: {e}")
-            return False
 
-    async def disconnect(self):
-        """Desconectar do servidor"""
+    async def connect(self):
+        """Estabelecer conexão RCON"""
         try:
-            async with self._lock:
-                if self._connection:
-                    self._connection.close()
-                    self._connection = None
-                    
-                    if self.metrics:
-                        await self.metrics.record_command('rcon_disconnect')
-                    
-                    self.logger.logger.info("RCON desconectado")
-                    
+            if not self._rcon:
+                self._rcon = valve.rcon.RCON(self.host, self.port, self.password)
+                self._rcon.connect()
+                self.logger.info("Conexão RCON estabelecida")
         except Exception as e:
-            self.logger.logger.error(f"Erro ao desconectar RCON: {e}")
+            self.logger.error(f"Erro ao conectar RCON: {e}")
+            raise
 
-    async def execute(self, command: str) -> Optional[str]:
+    async def execute(self, command: str) -> str:
         """Executar comando RCON"""
         try:
-            if not await self.connect():
-                return None
-                
             async with self._lock:
-                response = self._connection.execute(command)
-                
-                if self.metrics:
-                    await self.metrics.record_command('rcon_execute')
-                
+                if not self._rcon:
+                    await self.connect()
+                response = self._rcon.execute(command)
                 return response.decode('utf-8')
-                
         except Exception as e:
-            self.logger.logger.error(f"Erro ao executar comando RCON: {e}")
-            await self.disconnect()
-            return None
+            self.logger.error(f"Erro ao executar comando RCON: {e}")
+            await self.connect()  # Tentar reconectar
+            return ""
 
-    async def get_status(self) -> Optional[Dict]:
-        """Obter status do servidor"""
+    async def get_server_ip(self) -> str:
+        """Obter IP do servidor"""
         try:
-            response = await self.execute("status")
-            if not response:
-                return None
-                
-            # Parsear resposta
-            status = {
-                'hostname': '',
-                'version': '',
-                'map': '',
-                'players': [],
-                'players_online': 0,
-                'max_players': 0
-            }
-            
-            for line in response.splitlines():
-                if 'hostname:' in line:
-                    status['hostname'] = line.split('hostname:')[1].strip()
-                elif 'version' in line:
-                    status['version'] = line.split('version')[1].strip()
-                elif 'map' in line:
-                    status['map'] = line.split('map:')[1].strip()
-                elif '#' in line and 'STEAM' in line:
-                    status['players'].append(self._parse_player(line))
-                    
-            status['players_online'] = len(status['players'])
-            
-            if self.metrics:
-                await self.metrics.update_server_status(
-                    'players_online',
-                    status['players_online']
-                )
-            
-            return status
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao obter status: {e}")
-            return None
-
-    def _parse_player(self, line: str) -> Dict:
-        """Parsear informações do jogador da linha de status"""
-        try:
-            parts = line.split()
-            return {
-                'id': parts[1],
-                'name': ' '.join(parts[2:-7]),
-                'steamid': parts[-7],
-                'ping': int(parts[-2]),
-                'loss': int(parts[-1].rstrip('%')),
-                'state': parts[-3]
-            }
+            response = await self.execute('status')
+            for line in response.split('\n'):
+                if 'udp/ip' in line.lower():
+                    return line.split()[1]
+            return self.host
         except:
-            return {}
+            return self.host
 
-    async def change_map(self, map_name: str) -> bool:
-        """Trocar mapa do servidor"""
-        try:
-            response = await self.execute(f"changelevel {map_name}")
-            success = response and "Changed map" in response
-            
-            if success and self.metrics:
-                await self.metrics.record_command('map_change')
-                
-            return success
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao trocar mapa: {e}")
-            return False
+    async def get_server_port(self) -> int:
+        """Obter porta do servidor"""
+        return self.port
 
-    async def send_message(self, message: str) -> bool:
-        """Enviar mensagem para o servidor"""
+    async def get_gotv_port(self) -> int:
+        """Obter porta GOTV"""
         try:
-            response = await self.execute(f"say {message}")
-            return response is not None
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao enviar mensagem: {e}")
-            return False
+            response = await self.execute('tv_status')
+            for line in response.split('\n'):
+                if 'port' in line.lower():
+                    return int(line.split()[1])
+            return self.port + 5
+        except:
+            return self.port + 5
 
-    async def kick_player(self, steam_id: str, reason: str = "") -> bool:
-        """Kickar jogador do servidor"""
-        try:
-            response = await self.execute(f"kickid {steam_id} {reason}")
-            success = response and "Kicked" in response
-            
-            if success and self.metrics:
-                await self.metrics.record_command('player_kick')
-                
-            return success
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao kickar jogador: {e}")
-            return False
+    async def get_connect_command(self) -> str:
+        """Obter comando de conexão"""
+        ip = await self.get_server_ip()
+        return f"connect {ip}:{self.port}"
 
-    async def set_password(self, password: str) -> bool:
-        """Definir senha do servidor"""
+    async def get_player_name(self, steam_id: str) -> str:
+        """Obter nome do jogador pelo Steam ID"""
         try:
-            response = await self.execute(f"sv_password {password}")
-            return response is not None
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao definir senha: {e}")
-            return False
+            response = await self.execute('status')
+            for line in response.split('\n'):
+                if steam_id in line:
+                    parts = line.split()
+                    return ' '.join(parts[2:-2])  # Nome está entre o índice 2 e os últimos 2 campos
+            return "Unknown"
+        except:
+            return "Unknown"
+
+    def __del__(self):
+        """Cleanup ao destruir objeto"""
+        if self._rcon:
+            try:
+                self._rcon.close()
+            except:
+                pass
