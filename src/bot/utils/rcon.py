@@ -194,4 +194,28 @@ class RCONClient:
         except Exception as e:
             raise ConnectionError(f"Send error: {e}")
 
-    async def _read_packet(self) -> Optional ▋
+    async def _read_packet(self) -> Optional[RCONPacket]:
+        """Read RCON packet"""
+        if not self._reader:
+            raise ConnectionError("Not connected")
+            
+        try:
+            # Read packet size
+            size_data = await self._reader.read(4)
+            if not size_data:
+                return None
+                
+            size = struct.unpack('<i', size_data)[0]
+            
+            # Read packet data
+            data = size_data + await self._reader.read(size)
+            
+            return RCONPacket.decode(data)
+            
+        except Exception as e:
+            raise ConnectionError(f"Read error: {e}")
+
+    def _get_request_id(self) -> int:
+        """Get next request ID"""
+        self._request_id += 1
+        return self._request_id
