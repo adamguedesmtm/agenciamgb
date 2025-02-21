@@ -7,6 +7,7 @@ Created: 2025-02-21 04:13:08
 import asyncpg
 import os
 import json
+from dotenv import load_dotenv
 from datetime import datetime
 from .logger import Logger
 
