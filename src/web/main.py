@@ -38,3 +38,9 @@ async def home(request: Request):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.get("/monitor")
+async def monitor():
+    """Monitoramento do sistema"""
+    monitor = SystemMonitor()
+    return await monitor.get_system_status()
