@@ -236,4 +236,21 @@ class UpdateManager:
                 raise ValueError("Falha ao iniciar servidor")
 
             self.logger.logger.info(f"Rollback concluído usando {backup_path}")
+            return True
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao fazer rollback: {e}")
+            return False
+
+    async def schedule_update_check(self, interval: int):
+        """Agendar verificação automática de atualizações"""
+        try:
+            while True:
+                await self.check_updates()
+                await asyncio.sleep(interval)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.logger.logger.error(f"Erro na verificação agendada: {e}")
             
