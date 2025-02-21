@@ -1,7 +1,7 @@
 """
 CS2 Discord Bot Main
 Author: adamguedesmtm
-Created: 2025-02-21 15:48:25
+Created: 2025-02-21 15:58:46
 """
 
 import os
@@ -17,8 +17,7 @@ from utils.matchzy_manager import MatchzyManager
 from utils.wingman_manager import WingmanManager
 from utils.retake_manager import RetakeManager
 from utils.player_card import PlayerCard
-from utils.elo_manager import EloManager  # Novo import
-from utils.steam_manager import SteamManager  # Novo import
+from utils.elo_manager import EloManager
 from pathlib import Path
 
 # Carregar variáveis de ambiente
@@ -39,11 +38,20 @@ class CS2Bot(commands.Bot):
         # Paths
         self.base_dir = Path(__file__).parent.parent
         self.assets_dir = self.base_dir / "assets"
+        self.data_dir = self.base_dir / "data"
         
-        # Inicializar managers
+        # Criar diretórios necessários
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.assets_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Managers principais
         self.config = ConfigManager()
-        self.metrics = MetricsManager()
         self.logger = Logger('cs2bot')
+        self.metrics = MetricsManager(
+            data_dir=str(self.data_dir),
+            logger=self.logger
+        )
+        self.elo = EloManager(self.metrics)
         
         # RCON managers
         self.rcon_5v5 = RCONManager(
@@ -66,80 +74,30 @@ class CS2Bot(commands.Bot):
         
         # Game managers
         self.queue = QueueManager(self.metrics)
-        self.matchzy = MatchzyManager(self.rcon_5v5, self.config, self.metrics)
-        self.wingman = WingmanManager(self.rcon_2v2, self.config, self.metrics)
-        self.retake = RetakeManager(self.rcon_retake, self.config, self.metrics)
+        self.matchzy = MatchzyManager(
+            logger=self.logger,
+            metrics=self.metrics,
+            elo_manager=self.elo,
+            rcon_manager=self.rcon_5v5
+        )
+        self.wingman = WingmanManager(
+            logger=self.logger,
+            metrics=self.metrics,
+            elo_manager=self.elo,
+            rcon_manager=self.rcon_2v2
+        )
+        self.retake = RetakeManager(
+            logger=self.logger,
+            metrics=self.metrics,
+            rcon_manager=self.rcon_retake
+        )
         
-        # Stats & Cards
+        # Utils
         self.player_card = PlayerCard(
             assets_dir=str(self.assets_dir),
             logger=self.logger,
             metrics=self.metrics
         )
-        
-        # Novos managers
-        self.elo = EloManager(self.metrics)
-        self.steam = SteamManager(
-            api_key=os.getenv('STEAM_API_KEY'),
-            logger=self.logger
-        )
-        
-        # Listeners para eventos
-        self.setup_listeners()
-    
-    def setup_listeners(self):
-        """Configurar event listeners"""
-        @self.event
-        async def on_match_end(match_data: dict):
-            """Atualizar ELO quando uma partida termina"""
-            try:
-                # Atualizar ELO dos jogadores
-                elo_changes = self.elo.calculate_match_elo(match_data)
-                
-                # Atualizar métricas
-                for change in elo_changes:
-                    self.metrics.update_player_rating(
-                        change['steam_id'],
-                        change['new_rating'],
-                        change['rating_change']
-                    )
-                
-                # Notificar no canal de resultados
-                results_channel_id = self.config.get('channels.match_results')
-                if results_channel_id:
-                    channel = self.get_channel(int(results_channel_id))
-                    if channel:
-                        embed = discord.Embed(
-                            title="🏁 Partida Finalizada",
-                            color=discord.Color.blue()
-                        )
-                        
-                        # Score
-                        score_ct = match_data['score_ct']
-                        score_t = match_data['score_t']
-                        embed.add_field(
-                            name="Placar",
-                            value=f"CT {score_ct} x {score_t} T",
-                            inline=False
-                        )
-                        
-                        # ELO changes
-                        elo_text = ""
-                        for change in elo_changes:
-                            player_name = self.steam.get_player_name(change['steam_id'])
-                            sign = "+" if change['rating_change'] > 0 else ""
-                            elo_text += f"{player_name}: {sign}{change['rating_change']:.1f}\n"
-                        
-                        embed.add_field(
-                            name="Mudanças de ELO",
-                            value=elo_text or "Nenhuma mudança",
-                            inline=False
-                        )
-                        
-                        await channel.send(embed=embed)
-                
-            except Exception as e:
-                self.logger.logger.error(f"Erro ao processar fim de partida: {e}")
     
     async def setup_hook(self):
         """Setup do bot"""
