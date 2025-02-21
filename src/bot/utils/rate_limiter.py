@@ -1,166 +1,217 @@
 """
 Rate Limiter for CS2 Server
 Author: adamguedesmtm
-Created: 2025-02-21 04:18:55
+Created: 2025-02-21 05:56:22
 """
 
-import asyncio
-from datetime import datetime, timedelta
+import time
 from collections import defaultdict
-from typing import Optional, Dict, List
+from datetime import datetime
+from typing import Dict, Optional, Tuple
+import asyncio
 from .logger import Logger
 
 class RateLimiter:
     def __init__(self):
         self.logger = Logger('rate_limiter')
-        self._limits: Dict[str, Dict] = {}
-        self._requests: Dict[str, List] = defaultdict(list)
+        self._limits = {}  # Configurações de limite por chave
+        self._counters = defaultdict(list)  # Contadores por chave
+        self._blocked = {}  # Chaves bloqueadas
         self._cleanup_task = None
 
     async def start(self):
-        """Iniciar limpeza automática"""
-        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        """Iniciar rate limiter"""
+        try:
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            self.logger.logger.info("Rate limiter iniciado")
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao iniciar rate limiter: {e}")
 
     async def stop(self):
-        """Parar limpeza automática"""
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
+        """Parar rate limiter"""
+        try:
+            if self._cleanup_task:
+                self._cleanup_task.cancel()
+                try:
+                    await self._cleanup_task
+                except asyncio.CancelledError:
+                    pass
+            self.logger.logger.info("Rate limiter parado")
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao parar rate limiter: {e}")
 
-    def add_limit(self, name: str, requests: int, period: int):
+    def set_limit(self, key: str, max_requests: int, window: int):
         """
-        Adicionar novo limite
-        requests: número máximo de requisições
-        period: período em segundos
-        """
-        self._limits[name] = {
-            'requests': requests,
-            'period': period
-        }
-
-    async def acquire(self, name: str, key: str) -> bool:
-        """
-        Tentar adquirir permissão
-        Retorna False se o limite foi excedido
+        Definir limite de requisições
+        key: Identificador do limite
+        max_requests: Número máximo de requisições
+        window: Janela de tempo em segundos
         """
         try:
-            if name not in self._limits:
-                self.logger.logger.warning(f"Limite '{name}' não definido")
-                return True
+            self._limits[key] = {
+                'max_requests': max_requests,
+                'window': window
+            }
+            self.logger.logger.info(
+                f"Limite definido: {key} - {max_requests} req/{window}s"
+            )
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao definir limite: {e}")
 
-            limit = self._limits[name]
-            now = datetime.now()
+    async def check(self, key: str, identifier: str) -> Tuple[bool, Optional[int]]:
+        """
+        Verificar se requisição está dentro do limite
+        Retorna: (permitido, tempo_restante_bloqueio)
+        """
+        try:
+            if key not in self._limits:
+                return True, None
+
+            # Verificar bloqueio
+            if self._is_blocked(identifier):
+                return False, self._get_block_remaining(identifier)
+
+            limit = self._limits[key]
+            now = time.time()
             
             # Limpar requisições antigas
-            await self._cleanup_requests(name, key, now)
-            
-            # Verificar limite
-            if len(self._requests[f"{name}:{key}"]) >= limit['requests']:
-                return False
-
-            # Adicionar nova requisição
-            self._requests[f"{name}:{key}"].append(now)
-            return True
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao verificar rate limit: {e}")
-            return True
-
-    async def get_remaining(self, name: str, key: str) -> Optional[int]:
-        """Obter número de requisições restantes"""
-        try:
-            if name not in self._limits:
-                return None
-
-            limit = self._limits[name]
-            now = datetime.now()
-            
-            # Limpar requisições antigas
-            await self._cleanup_requests(name, key, now)
-            
-            current = len(self._requests[f"{name}:{key}"])
-            return limit['requests'] - current
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao obter requisições restantes: {e}")
-            return None
-
-    async def get_reset_time(self, name: str, key: str) -> Optional[datetime]:
-        """Obter tempo para reset do limite"""
-        try:
-            if name not in self._limits:
-                return None
-
-            requests = self._requests[f"{name}:{key}"]
-            if not requests:
-                return datetime.now()
-
-            limit = self._limits[name]
-            oldest = min(requests)
-            return oldest + timedelta(seconds=limit['period'])
-            
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao obter tempo de reset: {e}")
-            return None
-
-    async def _cleanup_requests(self, name: str, key: str, now: datetime):
-        """Limpar requisições expiradas"""
-        try:
-            if name not in self._limits:
-                return
-
-            limit = self._limits[name]
-            cutoff = now - timedelta(seconds=limit['period'])
-            
-            self._requests[f"{name}:{key}"] = [
-                req for req in self._requests[f"{name}:{key}"]
-                if req > cutoff
+            self._counters[identifier] = [
+                t for t in self._counters[identifier]
+                if now - t <= limit['window']
             ]
             
+            # Verificar limite
+            if len(self._counters[identifier]) >= limit['max_requests']:
+                # Bloquear por 2x a janela de tempo
+                await self._block(identifier, limit['window'] * 2)
+                return False, limit['window'] * 2
+
+            # Registrar requisição
+            self._counters[identifier].append(now)
+            return True, None
+
         except Exception as e:
-            self.logger.logger.error(f"Erro ao limpar requisições: {e}")
+            self.logger.logger.error(f"Erro ao verificar limite: {e}")
+            return False, None
+
+    def _is_blocked(self, identifier: str) -> bool:
+        """Verificar se identificador está bloqueado"""
+        try:
+            if identifier not in self._blocked:
+                return False
+                
+            if time.time() >= self._blocked[identifier]:
+                del self._blocked[identifier]
+                return False
+                
+            return True
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao verificar bloqueio: {e}")
+            return False
+
+    async def _block(self, identifier: str, duration: int):
+        """Bloquear identificador"""
+        try:
+            self._blocked[identifier] = time.time() + duration
+            self.logger.logger.warning(
+                f"Identificador {identifier} bloqueado por {duration}s"
+            )
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao bloquear: {e}")
+
+    def _get_block_remaining(self, identifier: str) -> Optional[int]:
+        """Obter tempo restante de bloqueio"""
+        try:
+            if identifier not in self._blocked:
+                return None
+                
+            remaining = int(self._blocked[identifier] - time.time())
+            return max(0, remaining)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao obter tempo de bloqueio: {e}")
+            return None
 
     async def _cleanup_loop(self):
-        """Loop de limpeza automática"""
+        """Loop de limpeza de dados antigos"""
         try:
             while True:
-                now = datetime.now()
-                
-                # Limpar todas as requisições expiradas
-                for name in self._limits:
-                    for key in list(self._requests.keys()):
-                        if key.startswith(f"{name}:"):
-                            await self._cleanup_requests(name, key.split(':')[1], now)
-                            
-                            # Remover chaves vazias
-                            if not self._requests[key]:
-                                del self._requests[key]
-                
-                await asyncio.sleep(60)  # Executar a cada minuto
-                
+                try:
+                    now = time.time()
+                    
+                    # Limpar contadores antigos
+                    for identifier in list(self._counters.keys()):
+                        max_window = max(
+                            limit['window']
+                            for limit in self._limits.values()
+                        )
+                        self._counters[identifier] = [
+                            t for t in self._counters[identifier]
+                            if now - t <= max_window
+                        ]
+                        if not self._counters[identifier]:
+                            del self._counters[identifier]
+                    
+                    # Limpar bloqueios expirados
+                    for identifier in list(self._blocked.keys()):
+                        if now >= self._blocked[identifier]:
+                            del self._blocked[identifier]
+                    
+                    await asyncio.sleep(60)  # Executar a cada minuto
+                    
+                except Exception as e:
+                    self.logger.logger.error(f"Erro no cleanup: {e}")
+                    await asyncio.sleep(5)
+                    
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            self.logger.logger.error(f"Erro no loop de limpeza: {e}")
 
-    def get_limits(self) -> Dict[str, Dict]:
-        """Obter todos os limites configurados"""
+    def get_limits(self) -> Dict:
+        """Obter limites configurados"""
         return self._limits.copy()
 
-    async def reset(self, name: str, key: str):
-        """Resetar contador para um limite específico"""
+    def get_status(self, identifier: str) -> Dict:
+        """Obter status do identificador"""
         try:
-            if f"{name}:{key}" in self._requests:
-                del self._requests[f"{name}:{key}"]
+            now = time.time()
+            status = {
+                'requests': len(self._counters[identifier]),
+                'blocked': self._is_blocked(identifier),
+                'block_remaining': self._get_block_remaining(identifier)
+            }
+            
+            # Adicionar informações por limite
+            status['limits'] = {}
+            for key, limit in self._limits.items():
+                requests = len([
+                    t for t in self._counters[identifier]
+                    if now - t <= limit['window']
+                ])
+                status['limits'][key] = {
+                    'requests': requests,
+                    'max_requests': limit['max_requests'],
+                    'window': limit['window'],
+                    'remaining': limit['max_requests'] - requests
+                }
+                
+            return status
         except Exception as e:
-            self.logger.logger.error(f"Erro ao resetar limite: {e}")
+            self.logger.logger.error(f"Erro ao obter status: {e}")
+            return {}
 
-    async def reset_all(self):
-        """Resetar todos os contadores"""
+    async def reset(self, identifier: str = None):
+        """Resetar contadores e bloqueios"""
         try:
-            self._requests.clear()
+            if identifier:
+                if identifier in self._counters:
+                    del self._counters[identifier]
+                if identifier in self._blocked:
+                    del self._blocked[identifier]
+            else:
+                self._counters.clear()
+                self._blocked.clear()
+                
+            self.logger.logger.info(
+                f"Contadores resetados: {identifier or 'todos'}"
+            )
         except Exception as e:
-            self.logger.logger.error(f"Erro ao resetar todos os limites: {e}")
+            self.logger.logger.error(f"Erro ao resetar: {e}")
