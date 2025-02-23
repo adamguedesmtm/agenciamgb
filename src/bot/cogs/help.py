@@ -12,6 +12,39 @@ class Help(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+        
+    @commands.command(name="helpadmin")
+    @commands.has_permissions(administrator=True)
+    async def help_admin(self, ctx):
+        """Mostrar ajuda para comandos administrativos."""
+        try:
+            embed = discord.Embed(
+                title="⚙️ Ajuda para Administradores",
+                color=discord.Color.gold()
+            )
+
+            admin_commands = [
+                "!clearqueue - Limpar fila específica",
+                "!forcemap - Forçar troca de mapa",
+                "!kickplayer - Kickar jogador",
+                "!serverinfo - Ver info do servidor",
+                "!restartserver - Reiniciar servidor",
+                "!forcebackup - Forçar criação de backup",
+                "!forceroles - Forçar atualização de roles"
+            ]
+
+            embed.add_field(
+                name="Comandos Disponíveis",
+                value="\n".join(admin_commands),
+                inline=False
+            )
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            self.bot.logger.logger.error(f"Erro ao mostrar ajuda admin: {e}")
+            await ctx.send("❌ Erro ao mostrar ajuda!")
+
     @commands.command()
     async def help(self, ctx, command: Optional[str] = None):
         """Mostrar ajuda dos comandos"""

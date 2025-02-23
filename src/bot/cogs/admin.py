@@ -24,7 +24,22 @@ class Admin(commands.Cog):
         except Exception as e:
             self.bot.logger.error(f"Erro ao atualizar roles: {e}")
             await ctx.send("❌ Ocorreu um erro ao atualizar roles!")
+            
+    @commands.command(name="forcebackup")
+    @commands.has_permissions(administrator=True)
+    async def force_backup(self, ctx):
+        """Forçar criação de backup."""
+        try:
+            await ctx.send("🔄 Criando backup...")
+            success = await self.bot.server_monitor._create_backup()
+            if success:
+                await ctx.send("✅ Backup criado com sucesso!")
+            else:
+                await ctx.send("❌ Falha ao criar backup!")
 
+        except Exception as e:
+            self.bot.logger.logger.error(f"Erro ao criar backup: {e}")
+            await ctx.send("❌ Ocorreu um erro ao criar backup!")    
     @commands.command(name="resetstats")
     @commands.has_permissions(administrator=True)
     async def reset_stats(self, ctx, member: discord.Member):

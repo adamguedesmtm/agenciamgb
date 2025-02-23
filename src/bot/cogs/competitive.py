@@ -16,7 +16,7 @@ class Competitive(commands.Cog):
 
     @commands.command()
     async def queue5v5(self, ctx):
-        """Entrar na fila 5v5"""
+        """Entrar na fila competitiva."""
         try:
             # Verificar se jogador já está em alguma fila
             if self.bot.queue.is_in_queue(ctx.author.id):
@@ -25,14 +25,14 @@ class Competitive(commands.Cog):
 
             # Adicionar jogador à fila
             position = await self.bot.queue.add_player(
-                ctx.author.id, 
+                ctx.author.id,
                 'competitive',
                 ctx.author.name
             )
 
             # Enviar mensagem de confirmação
             await ctx.send(
-                f"✅ {ctx.author.mention} entrou na fila 5v5! (Posição: {position})"
+                f"✅ {ctx.author.mention} entrou na fila competitiva! (Posição: {position})"
             )
 
             # Verificar se há jogadores suficientes
@@ -42,6 +42,8 @@ class Competitive(commands.Cog):
         except Exception as e:
             self.bot.logger.logger.error(f"Erro ao entrar na fila 5v5: {e}")
             await ctx.send("❌ Erro ao entrar na fila!")
+
+    # Outros métodos permanecem iguais...
 
     @commands.command()
     async def leave(self, ctx):

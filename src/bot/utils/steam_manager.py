@@ -13,7 +13,24 @@ class SteamManager:
         self.api_key = api_key
         self.logger = logger or Logger('steam_manager')
         self.cache = {}  # Cache para minimizar chamadas à API
-        
+
+    async def get_community_profile(self, steam_id: str) -> Optional[Dict]:
+        """Buscar perfil público do jogador no Steam."""
+        try:
+            summary = await self.get_player_summary(steam_id)
+            if not summary:
+                return None
+
+            profile_url = summary.get("profile_url", "")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(profile_url) as response:
+                    if response.status == 200:
+                        return await response.json()
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao buscar perfil Steam: {e}")
+        return None
+
     async def get_player_summary(self, steam_id: str) -> Optional[Dict]:
         """Buscar informações do jogador na Steam"""
         try:

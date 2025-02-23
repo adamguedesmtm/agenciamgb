@@ -54,125 +54,24 @@ class MatchzyManager:
         self.ready_players = set()  # Set de discord_ids
         self.locked_teams = False  # Bloqueio de mudança de equipe
 
-    async def setup_match(self, match_type: str) -> Dict:
-        """Configurar nova partida"""
+    async def setup_match(self, match_type: str, is_bo3: bool = False) -> Dict:
+        """Configurar nova partida."""
         try:
             async with self.server_lock:
-                # Verificar se já existe um servidor ativo
                 if self.active_server:
-                    self.logger.error("Tentativa de criar servidor quando já existe um ativo")
-                    return {
-                        'error': True,
-                        'message': 'Já existe um servidor ativo! Use !status para ver detalhes ou !forceend para encerrá-lo.'
-                    }
+                    return {"error": True, "message": "Já existe um servidor ativo!"}
 
-                # Resetar estado
-                self._reset_match_state()
-                
-                # Configurações base
-                base_config = {
-                    'sv_cheats': '0',
-                    'mp_autokick': '0',
-                    'mp_autoteambalance': '0',
-                    'mp_limitteams': '0',
-                    'sv_full_alltalk': '0',
-                    'sv_deadtalk': '0',
-                    'sv_allow_votes': '0',
-                    'sv_coaching_enabled': '1',
-                    'mp_match_end_restart': '1',
-                    'mp_match_end_changelevel': '1',
-                    'mp_match_restart_delay': '10',
-                    'mp_endmatch_votenextmap': '0',
-                    'mp_endmatch_votenextleveltime': '0',
-                    'mp_warmuptime': '300',
-                    'mp_warmup_pausetimer': '1',
-                    'mp_halftime': '1',
-                    'mp_team_timeout_max': '4',
-                    'mp_team_timeout_time': '180'
-                }
+                # Configurar servidor
+                server_info = await self._configure_server(match_type)
+                if not server_info:
+                    return {"error": True, "message": "Falha ao configurar servidor."}
 
-                # Configurações específicas por tipo de partida
-                match_configs = {
-                    'competitive': {
-                        'mp_maxrounds': '30',
-                        'mp_match_can_clinch': '1',
-                        'mp_overtime_enable': '1',
-                        'mp_overtime_maxrounds': '6',
-                        'mp_overtime_startmoney': '16000',
-                        'mp_roundtime': '1.92',
-                        'mp_roundtime_defuse': '1.92',
-                        'mp_round_restart_delay': '7',
-                        'mp_freezetime': '15',
-                        'mp_buytime': '20',
-                        'mp_c4timer': '40'
-                    },
-                    'wingman': {
-                        'mp_maxrounds': '16',
-                        'mp_match_can_clinch': '1',
-                        'mp_overtime_enable': '0',
-                        'mp_roundtime': '1.92',
-                        'mp_roundtime_defuse': '1.92',
-                        'mp_round_restart_delay': '5',
-                        'mp_freezetime': '10',
-                        'mp_buytime': '15',
-                        'mp_c4timer': '40'
-                    },
-                    'practice': {
-                        'mp_maxrounds': '999',
-                        'mp_match_can_clinch': '0',
-                        'mp_overtime_enable': '0',
-                        'mp_roundtime': '60',
-                        'mp_roundtime_defuse': '60',
-                        'mp_round_restart_delay': '3',
-                        'mp_freezetime': '2',
-                        'mp_buytime': '3600',
-                        'mp_c4timer': '40',
-                        'sv_cheats': '1',
-                        'sv_infinite_ammo': '1',
-                        'mp_warmup_pausetimer': '0'
-                    }
-                }
-
-                # Aplicar configurações base
-                for cvar, value in base_config.items():
-                    await self.rcon.execute(f'{cvar} {value}')
-
-                # Aplicar configurações específicas
-                config = match_configs.get(match_type, match_configs['competitive'])
-                for cvar, value in config.items():
-                    await self.rcon.execute(f'{cvar} {value}')
-
-                # Iniciar warmup
-                self.match_state['warmup'] = True
-                await self.rcon.execute('mp_warmup_start')
-                await self.setup_cs2_listeners()
-
-                # Registrar servidor ativo
-                server_info = {
-                    'ip': await self.rcon.get_server_ip(),
-                    'port': await self.rcon.get_server_port(),
-                    'gotv': await self.rcon.get_gotv_port(),
-                    'match_type': match_type,
-                    'start_time': datetime.utcnow(),
-                    'connect_cmd': await self.rcon.get_connect_command()
-                }
-                
-                self.active_server = server_info
-
-                if self.metrics:
-                    await self.metrics.record_player_stat('matches_setup', match_type)
-
-                return {
-                    'success': True,
-                    **server_info
-                }
-
+                # Retornar informações do servidor
+                server_info['host'] = self.config.get('duckdns.domain', 'localhost')  # Usar DuckDNS se disponível
+                return {"success": True, "server_info": server_info}
         except Exception as e:
             self.logger.error(f"Erro ao configurar partida: {e}")
-            return {
-                'error': True,
-                'message': f'Erro ao configurar servidor: {str(e)}'
-            }
+            return {"error": True, "message": f"Erro interno: {str(e)}"}
 
     async def process_cs2_command(self, steam_id: str, command: str) -> bool:
         """Processar comandos vindos do servidor CS2"""

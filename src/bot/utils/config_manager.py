@@ -39,8 +39,7 @@ class ConfigManager:
                     'rcon_password': '',
                     'server_password': '',
                     'maps': [
-                        'de_lake', 'de_shortdust', 'de_overpass',
-                        'de_inferno', 'de_vertigo'
+                        'de_lake', 'de_shortdust', 'de_vertigo'
                     ]
                 },
                 'retake': {
@@ -85,10 +84,18 @@ class ConfigManager:
                 'prefix': '!',
                 'admin_role': 'Admin',
                 'channels': {
-                    'queue': '',
-                    'matches': '',
+                    'notifications': '',
+                    'commands': '',
                     'admin': ''
                 }
+            },
+            'duckdns': {
+                'enabled': False,
+                'domain': '',
+                'token': ''
+            },
+            'upnp': {
+                'enabled': False
             }
         }
 
@@ -105,7 +112,7 @@ class ConfigManager:
 
             # Atualizar com valores padrão faltantes
             self._update_missing_defaults(self.config, self.defaults)
-            
+
         except Exception as e:
             self.logger.logger.error(f"Erro ao carregar config: {e}")
             self.config = self.defaults
@@ -122,12 +129,9 @@ class ConfigManager:
         """Salvar configurações no arquivo"""
         try:
             self.config_dir.mkdir(parents=True, exist_ok=True)
-            
             with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=4)
-                
             self.logger.logger.info("Configurações salvas com sucesso")
-            
         except Exception as e:
             self.logger.logger.error(f"Erro ao salvar config: {e}")
 
@@ -146,20 +150,13 @@ class ConfigManager:
         try:
             keys = key.split('.')
             target = self.config
-            
-            # Navegar até o último nível
             for k in keys[:-1]:
                 if k not in target:
                     target[k] = {}
                 target = target[k]
-                
-            # Definir valor
             target[keys[-1]] = value
-            
-            # Salvar alterações
             self.save_config()
             return True
-            
         except Exception as e:
             self.logger.logger.error(f"Erro ao definir config: {e}")
             return False

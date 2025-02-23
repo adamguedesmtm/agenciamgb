@@ -24,6 +24,25 @@ class MapManager:
         self.map_history: List[str] = []
         self.max_history = 5
 
+    async def get_map_rotation(self, mode: str, exclude: List[str] = None) -> List[str]:
+        """Gerar rotação de mapas para BO3."""
+        try:
+            maps = await self.load_maps()
+            available_maps = maps.get(mode, [])
+
+            if exclude:
+                available_maps = [m for m in available_maps if m not in exclude]
+
+            if len(available_maps) < 3:
+                self.logger.logger.warning("Insuficientes mapas disponíveis para BO3.")
+                return []
+
+            return random.sample(available_maps, 3)
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao gerar rotação de mapas: {e}")
+            return []
+
     async def load_maps(self) -> Dict[str, List[str]]:
         """Carregar mapas disponíveis"""
         try:

@@ -30,7 +30,17 @@ class EloManager:
             k *= 1.2
             
         return max(self.MIN_K_FACTOR, k)
-    
+
+    def calculate_team_elo(self, team: List[Dict]) -> float:
+        """Calcular ELO médio de um time."""
+        try:
+            total_rating = sum(player.get("rating", 1000) for player in team)
+            return round(total_rating / len(team), 2)
+
+        except Exception as e:
+            self.metrics.logger.error(f"Erro ao calcular ELO do time: {e}")
+            return 1000.0
+
     def calculate_match_elo(self, match_data: Dict) -> List[Dict]:
         """
         Calcula mudanças de ELO para uma partida

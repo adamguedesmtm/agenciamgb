@@ -68,22 +68,36 @@ class RoleSystem:
         }
 
     async def update_roles(self, guild: discord.Guild):
-        """Atualizar todas as roles do servidor"""
+        """Atualizar roles dinamicamente."""
         try:
-            # Obter todas as estatísticas
             all_stats = await self.stats_manager.get_all_players_stats()
-            
-            # Atualizar roles genéricas
+
             for member in guild.members:
                 if str(member.id) in all_stats:
-                    await self._update_generic_roles(member, guild, all_stats[str(member.id)])
+                    stats = all_stats[str(member.id)]
 
-            # Atualizar roles únicas
-            await self._update_unique_roles(guild, all_stats)
+                    # Remover roles antigas
+                    current_roles = [r for r in member.roles if r.name in self.generic_roles or r.name in self.unique_roles]
+                    await member.remove_roles(*current_roles)
 
+                    # Adicionar roles genéricas
+                    generic_roles = []
+                    for role_name, requirements in self.generic_roles.items():
+                        if self._meets_requirements(stats, requirements):
+                            generic_roles.append(await self._get_or_create_role(guild, role_name, requirements))
+
+                    # Adicionar roles únicas
+                    unique_roles = []
+                    for role_name, metric in self.unique_roles.items():
+                        top_player = await self.stats_manager.get_top_player(metric)
+                        if top_player and top_player['id'] == member.id:
+                            unique_roles.append(await self._get_or_create_role(guild, role_name, {'color': 0xFFD700}))
+
+                    # Aplicar roles
+                    await member.add_roles(*generic_roles, *unique_roles)
         except Exception as e:
             self.logger.logger.error(f"Erro ao atualizar roles: {e}")
-
+            
     async def _update_generic_roles(self, member: discord.Member, guild: discord.Guild, stats: Dict):
         """Atualizar roles genéricas de um membro"""
         try:

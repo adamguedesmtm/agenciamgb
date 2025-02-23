@@ -5,19 +5,14 @@ Created: 2025-02-21 15:46:19
 """
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 import aiohttp
 import io
-import os
-from pathlib import Path
 from .logger import Logger
 from .metrics import MetricsManager
 
 class PlayerCard:
-    def __init__(self,
-                 assets_dir: str = "/opt/cs2server/assets",
-                 logger: Optional[Logger] = None,
-                 metrics: Optional[MetricsManager] = None):
+    def __init__(self, assets_dir: str = "/opt/cs2server/assets", logger: Optional[Logger] = None, metrics: Optional[MetricsManager] = None):
         self.assets_dir = Path(assets_dir)
         self.logger = logger or Logger('player_card')
         self.metrics = metrics
@@ -32,7 +27,7 @@ class PlayerCard:
                 'title': ImageFont.truetype(str(fonts_dir / 'title.ttf'), 48),
                 'stats': ImageFont.truetype(str(fonts_dir / 'stats.ttf'), 32),
                 'details': ImageFont.truetype(str(fonts_dir / 'details.ttf'), 24),
-                'elo': ImageFont.truetype(str(fonts_dir / 'elo.ttf'), 64)  # Nova fonte para ELO
+                'elo': ImageFont.truetype(str(fonts_dir / 'elo.ttf'), 64)
             }
         except Exception as e:
             self.logger.logger.error(f"Erro ao carregar fontes: {e}")
@@ -49,50 +44,6 @@ class PlayerCard:
         except Exception as e:
             self.logger.logger.error(f"Erro ao carregar ranks: {e}")
             return {}
-
-    async def get_steam_profile_background(self, steam_id: str) -> Optional[Image.Image]:
-        """Buscar imagem de fundo do perfil Steam"""
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Primeiro, buscar o perfil Steam para obter a URL da imagem
-                profile_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={os.getenv('STEAM_API_KEY')}&steamids={steam_id}"
-                async with session.get(profile_url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if players := data.get('response', {}).get('players', []):
-                            player = players[0]
-                            # Tentar pegar a imagem de perfil em alta resolução
-                            bg_url = player.get('profilebackground', '')
-                            if bg_url:
-                                async with session.get(bg_url) as img_response:
-                                    if img_response.status == 200:
-                                        img_data = await img_response.read()
-                                        return Image.open(io.BytesIO(img_data))
-        except Exception as e:
-            self.logger.logger.error(f"Erro ao buscar fundo do Steam: {e}")
-        return None
-
-    def create_background(self, width: int, height: int, steam_bg: Optional[Image.Image] = None) -> Image.Image:
-        """Criar fundo do card"""
-        if steam_bg:
-            # Redimensionar e aplicar blur na imagem do Steam
-            bg = steam_bg.resize((width, height), Image.Resampling.LANCZOS)
-            bg = bg.filter(ImageFilter.GaussianBlur(radius=5))
-            
-            # Adicionar overlay escuro para melhor legibilidade
-            overlay = Image.new('RGBA', (width, height), (0, 0, 0, 128))
-            bg = Image.alpha_composite(bg.convert('RGBA'), overlay)
-        else:
-            # Criar gradiente como fallback
-            bg = Image.new('RGBA', (width, height), (32, 32, 32, 255))
-            gradient = Image.new('RGBA', (width, height))
-            draw = ImageDraw.Draw(gradient)
-            for y in range(height):
-                alpha = int(255 * (1 - y/height))
-                draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
-            bg = Image.alpha_composite(bg, gradient)
-        
-        return bg
 
     async def generate(self, player_id: int, player_name: str, steam_id: str, avatar_url: Optional[str] = None) -> Optional[io.BytesIO]:
         """Gerar card do jogador"""
@@ -202,4 +153,25 @@ class PlayerCard:
             self.logger.logger.error(f"Erro ao gerar player card: {e}")
             return None
 
-    # ... (resto dos métodos permanece igual)
+    def _calculate_performance(self, stats: Dict) -> float:
+        """Calcular desempenho geral do jogador"""
+        try:
+            kd_ratio = stats.get('kd_ratio', 1.0)
+            hs_ratio = stats.get('hs_ratio', 0.3)
+            mvps = stats.get('mvps', 0)
+            clutches_won = stats.get('clutches_won', 0)
+            entry_kills = stats.get('entry_kills', 0)
+
+            # Fórmula de desempenho
+            performance = (
+                kd_ratio * 0.4 +
+                hs_ratio * 0.2 +
+                mvps * 0.1 +
+                clutches_won * 0.1 +
+                entry_kills * 0.2
+            )
+
+            return round(performance, 2)
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao calcular desempenho: {e}")
+            return 1.0

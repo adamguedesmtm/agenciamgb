@@ -254,6 +254,39 @@ class StatsManager:
             self.logger.logger.error(f"Erro ao obter stats do jogador: {e}")
             return None
 
+    async def get_top_players_by_map(self, map_name: str, limit: int = 5) -> List[Dict]:
+        """Buscar melhores jogadores por mapa."""
+        try:
+            async with self.pool.acquire() as conn:
+                results = await conn.fetch("""
+                    SELECT 
+                        p.name AS player_name,
+                        ps.kills,
+                        ps.deaths,
+                        ps.headshots,
+                        ps.mvps
+                    FROM player_stats ps
+                    JOIN players p ON ps.player_id = p.id
+                    WHERE ps.map = $1
+                    ORDER BY ps.kills DESC, ps.headshots DESC
+                    LIMIT $2
+                """, map_name, limit)
+
+                return [
+                    {
+                        "name": r["player_name"],
+                        "kills": r["kills"],
+                        "deaths": r["deaths"],
+                        "headshots": r["headshots"],
+                        "mvps": r["mvps"]
+                    }
+                    for r in results
+                ]
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao buscar top jogadores por mapa: {e}")
+            return []
+
     async def get_leaderboard(self, rating_type: str, limit: int = 10) -> List[Dict]:
         """Obter ranking dos jogadores"""
         try:
@@ -283,3 +316,27 @@ class StatsManager:
         except Exception as e:
             self.logger.logger.error(f"Erro ao obter leaderboard: {e}")
             return []
+        
+    async def get_rank_info(self, rating: float) -> Dict:
+        """Obter informações sobre o rank atual."""
+        ranks = [
+            {"name": "Bronze", "min_rating": 800, "icon": "🥉", "next_rank": "Silver", "points_to_next": 1000 - rating},
+            {"name": "Silver", "min_rating": 1000, "icon": "🥈", "next_rank": "Gold", "points_to_next": 1200 - rating},
+            {"name": "Gold", "min_rating": 1200, "icon": "🏆", "next_rank": "Platinum", "points_to_next": 1500 - rating},
+            {"name": "Platinum", "min_rating": 1500, "icon": "✨", "next_rank": "Diamond", "points_to_next": 1800 - rating},
+            {"name": "Diamond", "min_rating": 1800, "icon": "💎", "next_rank": "Elite", "points_to_next": 2200 - rating},
+            {"name": "Elite", "min_rating": 2200, "icon": "👑", "next_rank": None, "points_to_next": 0}
+        ]
+
+        for rank in ranks:
+            if rating >= rank["min_rating"]:
+                return {
+                    "name": rank["name"],
+                    "rating": rating,
+                    "icon": rank["icon"],
+                    "next_rank": rank["next_rank"],
+                    "points_to_next": max(rank["points_to_next"], 0),
+                    "progress": ((rating - rank["min_rating"]) / (rank.get("points_to_next", 1000))) * 100
+                }
+
+        return {"name": "Unranked", "rating": rating, "icon": "❓", "next_rank": "Bronze", "points_to_next": 800 - rating, "progress": 0}
