@@ -7,7 +7,3 @@ aiohttp
 asyncpg
 Pillow
 miniupnpc
-valve==0.2.4
-numpy
-matplotlib
-requests
