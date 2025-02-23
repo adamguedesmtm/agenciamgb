@@ -102,9 +102,15 @@ class ServerManager:
         self.upnp.deleteportmapping(gotv_port, 'TCP')
         self.upnp.deleteportmapping(gotv_port, 'UDP')
 
-    async def _launch_server(self, config: Dict):
-        """Método interno para iniciar o servidor CS2."""
-        self.logger.info(f"Iniciando servidor {config['type']}...")
+async def _launch_server(self, config: Dict):
+    """Método interno para iniciar o servidor CS2."""
+    try:
+        self.logger.logger.info(f"Iniciando servidor {config['type']}...")
+
+        # Verificar se DuckDNS está habilitado
+        if self.config.get('duckdns.enabled'):
+            config['host'] = self.config.get('duckdns.domain')
+
         subprocess.Popen([
             "/opt/cs2-modded-server/start_server.sh",
             "-game", "csgo",
@@ -119,6 +125,10 @@ class ServerManager:
             "+ip", "::",  # Escuta em todas as interfaces IPv6
             "+sv_lan", "0"
         ])
+
+        self.logger.logger.info(f"Servidor {config['type']} iniciado com sucesso!")
+    except Exception as e:
+        self.logger.logger.error(f"Erro ao iniciar servidor {config['type']}: {e}")
 
     async def _stop_active_server(self):
         """Método interno para parar o servidor ativo."""
