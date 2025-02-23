@@ -3,12 +3,12 @@ CS2 Discord Bot Main
 Author: adamguedesmtm
 Created: 2025-02-21 15:58:46
 """
-
+import os
 import discord
 from discord.ext import commands
 from utils.config_manager import ConfigManager
 from utils.logger import Logger
-from utils.database_manager import DatabaseManager
+from utils.database import DatabaseManager
 from utils.metrics import MetricsManager
 from utils.server_manager import ServerManager
 from utils.matchzy_manager import MatchzyManager

@@ -73,17 +73,13 @@ class DemoManager:
             return False
 
     async def _process_demo(self, demo_path: Path):
-        """Processar demo usando CS Demo Manager"""
+        """Processar demo usando CS Demo Manager GUI."""
         try:
-            # Extrair match_id do nome do arquivo
             match_id = demo_path.stem.split('_')[0]
 
-            # Processar demo
-            process = await asyncio.create_subprocess_exec(
-                self.parser_path,
-                'parse',
-                str(demo_path),
-                '--json',
+            # Executar GUI em segundo plano
+            process = await asyncio.create_subprocess_shell(
+                f"xvfb-run ./csgo-demoui -demo {demo_path} -json",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
@@ -95,31 +91,21 @@ class DemoManager:
 
             # Parsear resultado
             demo_data = json.loads(stdout.decode())
-            
-            # Extrair estatísticas
             match_stats = await self._extract_match_stats(demo_data)
-            
+
             # Atualizar banco de dados
             if self.stats_manager:
                 await self.stats_manager.update_match_stats(match_id, match_stats)
 
-            if self.metrics:
-                await self.metrics.record_command('demo_processed')
-
-            # Mover demo para arquivo
+            # Mover demo para pasta processed
             processed_dir = self.demos_dir / 'processed'
             processed_dir.mkdir(exist_ok=True)
             demo_path.rename(processed_dir / demo_path.name)
 
             self.logger.logger.info(f"Demo {match_id} processada com sucesso")
-
         except Exception as e:
-            self.logger.logger.error(f"Erro ao processar demo: {e}")
-            
-            # Mover demo para pasta de erros
-            failed_dir = self.demos_dir / 'failed'
-            failed_dir.mkdir(exist_ok=True)
-            demo_path.rename(failed_dir / demo_path.name)
+            self.logger.logger.error(f"Erro ao processar demo {match_id}: {e}")
+
 
     async def _extract_match_stats(self, demo_data: Dict) -> Dict:
         """Extrair estatísticas detalhadas da demo"""

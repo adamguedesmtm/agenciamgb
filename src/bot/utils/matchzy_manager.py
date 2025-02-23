@@ -66,11 +66,22 @@ class MatchzyManager:
                 if not server_info:
                     return {"error": True, "message": "Falha ao configurar servidor."}
 
-                # Retornar informações do servidor
-                server_info['host'] = self.config.get('duckdns.domain', 'localhost')  # Usar DuckDNS se disponível
+                # Obter informações dinâmicas
+                ip = await self.rcon.get_server_ip()
+                port = await self.rcon.get_server_port()
+                password = await self.rcon.get_server_password()
+
+                # Atualizar informações do servidor
+                server_info.update({
+                    "ip": ip,
+                    "port": port,
+                    "password": password,
+                    "connect_cmd": f"connect {ip}:{port}; password {password}"
+                })
+
                 return {"success": True, "server_info": server_info}
         except Exception as e:
-            self.logger.error(f"Erro ao configurar partida: {e}")
+            self.logger.logger.error(f"Erro ao configurar partida: {e}")
             return {"error": True, "message": f"Erro interno: {str(e)}"}
 
     async def process_cs2_command(self, steam_id: str, command: str) -> bool:

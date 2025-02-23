@@ -9,6 +9,22 @@ class ServerManager:
         self.server_lock = asyncio.Lock()  # Bloqueio para evitar múltiplos servidores
         self.upnp = UPnP()
 
+
+async def _setup_upnp(self, server_config: Dict):
+    """Configurar UPnP para abrir portas"""
+    try:
+        if not self.config.get('upnp.enabled'):
+            return
+
+        for port in [server_config['port'], server_config['port'] + 1]:  # Porta principal e GOTV
+            self.upnp.addportmapping(port, 'TCP', self.upnp.lanaddr, port, f"CS2 Server Port {port}", '')
+            self.upnp.addportmapping(port, 'UDP', self.upnp.lanaddr, port, f"CS2 Server Port {port}", '')
+
+        self.logger.logger.info("UPnP configurado com sucesso!")
+    except Exception as e:
+        self.logger.logger.error(f"Erro ao configurar UPnP: {e}")
+
+
     async def start_server(self, server_type: str, config: Dict) -> Optional[Dict]:
         """Inicia um servidor específico usando cs2-modded-server."""
         if self.active_server:
@@ -107,10 +123,9 @@ async def _launch_server(self, config: Dict):
     try:
         self.logger.logger.info(f"Iniciando servidor {config['type']}...")
 
-        # Verificar se DuckDNS está habilitado
-        if self.config.get('duckdns.enabled'):
-            config['host'] = self.config.get('duckdns.domain')
-
+        # Configurar UPnP
+        await self._setup_upnp(config)
+        
         subprocess.Popen([
             "/opt/cs2-modded-server/start_server.sh",
             "-game", "csgo",
