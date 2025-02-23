@@ -93,3 +93,12 @@ def main():
     config['upnp']['enabled'] = input("Deseja habilitar UPnP para abrir portas automaticamente? (sim/não): ").strip().lower() == "sim"
 
     # Salvar configurações no arquivo JSON
+    with open(config_file, 'w') as f:
+        json.dump(config, f, indent=4)
+
+    print(f"\n✅ Configurações salvas em {config_file}")
+    print("Você pode agora iniciar o bot usando o arquivo principal.")
+
+
+if __name__ == "__main__":
+    main()

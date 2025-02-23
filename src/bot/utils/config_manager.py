@@ -13,11 +13,37 @@ from .logger import Logger
 class ConfigManager:
     def __init__(self):
         self.logger = Logger('config_manager')
-        self.config_dir = Path('/opt/cs2server/config')
+        self.config_dir = Path('/opt/cs2server/config')  # Ou ajuste para o caminho correto
         self.config_file = self.config_dir / 'config.json'
         self.defaults = self._get_defaults()
         self.config = {}
         self.load_config()
+
+    def load_config(self):
+        try:
+            if not self.config_file.exists():
+                self.config = self.defaults
+                self.save_config()
+                return
+
+            with open(self.config_file, 'r') as f:
+                self.config = json.load(f)
+
+            # Atualizar valores padrão faltantes
+            self._update_missing_defaults(self.config, self.defaults)
+
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao carregar config: {e}")
+            self.config = self.defaults
+
+    def save_config(self):
+        try:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=4)
+            self.logger.logger.info("Configurações salvas com sucesso")
+        except Exception as e:
+            self.logger.logger.error(f"Erro ao salvar config: {e}")
 
     def _get_defaults(self) -> Dict:
         """Configurações padrão"""
